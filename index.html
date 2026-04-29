@@ -2,29 +2,32 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AR Virtual Try-On v4 — Complete CV Pipeline</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#08080c">
+<title>AR Virtual Try-On v5 — Responsive</title>
 <!--
   =====================================================================
-  IMPLEMENTASI WEB-BASED AUGMENTED REALITY VIRTUAL TRY-ON
-  MENGGUNAKAN METODE POSE ESTIMATION UNTUK VISUALISASI DESAIN SABLON
+  AR VIRTUAL TRY-ON v5 — RESPONSIVE EDITION
   =====================================================================
-  Pipeline lengkap yang diimplementasikan:
-   [1] BlazePose Pose Estimation (MediaPipe) — 33 keypoint detection
+  Pipeline Computer Vision yang diimplementasikan:
+   [1] BlazePose Pose Estimation (MediaPipe) — 33 keypoint
    [2] Selfie Segmentation (MediaPipe built-in) — body mask
-   [3] Pinhole Camera Distance Estimation — jarak user ke kamera
-   [4] Anthropometric Body Measurement — ekstraksi ukuran tubuh
-   [5] Temporal Smoothing (Moving Average) — stabilisasi pengukuran
-   [6] Homography 4-point Transformation — perspective warping
-   [7] TPS-inspired Mesh Warping — non-rigid deformation
-   [8] HSV Color Calibration — adaptasi pencahayaan
-   [9] Occlusion Handling (Mask-based) — clipping ke area tubuh
-   [10] Region-based Sleeve Tracking — tracking lengan terpisah
-   [11] Weighted Euclidean Size Recommendation — algoritma rekomendasi
+   [3] Pinhole Camera Distance Estimation — UX feedback jarak
+   [4] Homography 4-point Transformation — perspective warping
+   [5] TPS-inspired Mesh Warping — non-rigid deformation
+   [6] HSV Color Calibration — adaptasi pencahayaan
+   [7] Occlusion Handling (Mask-based) — clipping ke area tubuh
+
+  Fitur baru di v5:
+   • Layout responsive (desktop sidebar / mobile bottom sheet)
+   • Tombol matikan kamera
+   • Switch kamera depan ↔ belakang (mobile)
+   • Anchor mode dihardcode (atasan: bahu → pinggul)
+   • Tab pengukuran tubuh dihilangkan
   =====================================================================
 -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -39,41 +42,71 @@
   --purple:#a55bf5;--purple-soft:rgba(165,91,245,.12);
   --text-1:#eaeaf0;--text-2:#9999ae;--text-3:#5c5c72;
   --border:rgba(255,255,255,.06);--r:12px;
+  --safe-top:env(safe-area-inset-top, 0);
+  --safe-bot:env(safe-area-inset-bottom, 0);
 }
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'DM Sans',sans-serif;background:var(--bg-0);color:var(--text-1);height:100vh;overflow:hidden}
-.app{display:grid;grid-template-columns:1fr 400px;grid-template-rows:52px 1fr;height:100vh}
-@media(max-width:1000px){.app{grid-template-columns:1fr}.sidebar{display:none}}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{overscroll-behavior:none;touch-action:manipulation}
+body{font-family:'DM Sans',sans-serif;background:var(--bg-0);color:var(--text-1);overflow:hidden;height:100vh;height:100dvh}
 
-.header{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:var(--bg-1);border-bottom:1px solid var(--border);z-index:100}
-.logo{display:flex;align-items:center;gap:8px}
-.logo-mark{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-dim));display:grid;place-items:center;font-size:14px}
-.logo-label{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13px}
+/* =========================================================
+   LAYOUT — Mobile first
+   Mobile : header / viewport / bottom-sheet (3 row grid)
+   Desktop: header full-width + viewport+sidebar (grid 2 col)
+   ========================================================= */
+.app{
+  display:grid;
+  grid-template-rows:48px 1fr auto;
+  grid-template-columns:1fr;
+  height:100vh;height:100dvh;
+  padding-top:var(--safe-top);
+}
+
+.header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 12px;background:var(--bg-1);
+  border-bottom:1px solid var(--border);z-index:100;
+}
+.logo{display:flex;align-items:center;gap:8px;min-width:0}
+.logo-mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-dim));display:grid;place-items:center;font-size:13px;flex-shrink:0}
+.logo-label{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .logo-label em{font-style:normal;color:var(--accent)}
-.hdr-pills{display:flex;gap:6px}
-.pill{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 9px;border-radius:16px;border:1px solid var(--border);color:var(--text-2);background:var(--bg-2)}
+.logo-tag{font-size:9px;color:var(--text-3);margin-left:4px}
+.hdr-pills{display:flex;gap:6px;flex-shrink:0}
+.pill{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 8px;border-radius:16px;border:1px solid var(--border);color:var(--text-2);background:var(--bg-2)}
 .pill-dot{width:6px;height:6px;border-radius:50%;background:var(--text-3);transition:background .3s}
 .pill-dot.on{background:var(--accent);animation:blink 1.4s ease infinite}
 @keyframes blink{50%{opacity:.35}}
 
-.viewport{position:relative;background:var(--bg-0);overflow:hidden;display:flex;align-items:center;justify-content:center}
-#webcam{position:absolute;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);opacity:0}
-#canvas{position:absolute;width:100%;height:100%;object-fit:cover;z-index:2}
+/* =========================================================
+   VIEWPORT — kamera + canvas + floating overlays
+   ========================================================= */
+.viewport{
+  position:relative;background:var(--bg-0);overflow:hidden;
+  min-height:0;
+}
+#webcam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0}
+#webcam.mirror{transform:scaleX(-1)}
+#canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2}
 
-.start-overlay{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,8,12,.94);backdrop-filter:blur(16px);transition:opacity .5s,visibility .5s}
+/* Start overlay */
+.start-overlay{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,8,12,.94);backdrop-filter:blur(16px);transition:opacity .5s,visibility .5s;padding:20px}
 .start-overlay.gone{opacity:0;visibility:hidden;pointer-events:none}
-.start-hero{font-size:52px;margin-bottom:18px}
-.start-h{font-size:20px;font-weight:700;margin-bottom:6px}
-.start-p{color:var(--text-2);font-size:13px;text-align:center;max-width:460px;line-height:1.65;margin-bottom:20px}
-.start-pipeline{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;max-width:500px;margin-bottom:24px}
+.start-hero{font-size:48px;margin-bottom:14px}
+.start-h{font-size:18px;font-weight:700;margin-bottom:6px;text-align:center}
+.start-p{color:var(--text-2);font-size:12px;text-align:center;max-width:420px;line-height:1.6;margin-bottom:18px}
+.start-pipeline{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;max-width:480px;margin-bottom:22px}
 .start-chip{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 9px;border-radius:10px;background:var(--bg-2);border:1px solid var(--border);color:var(--text-2)}
-.btn-go{padding:12px 36px;background:linear-gradient(135deg,var(--accent),var(--accent-dim));border:none;border-radius:10px;color:var(--bg-0);font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;transition:transform .2s,box-shadow .2s}
-.btn-go:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,229,160,.3)}
+.btn-go{padding:13px 32px;background:linear-gradient(135deg,var(--accent),var(--accent-dim));border:none;border-radius:10px;color:var(--bg-0);font-family:'DM Sans',sans-serif;font-weight:700;font-size:14px;cursor:pointer;transition:transform .2s,box-shadow .2s;min-height:44px}
+.btn-go:active{transform:translateY(1px)}
+.btn-go:hover{box-shadow:0 8px 24px rgba(0,229,160,.3)}
+.start-error{margin-top:14px;padding:8px 14px;background:var(--red-soft);border:1px solid var(--red);border-radius:8px;color:var(--red);font-size:11px;max-width:380px;text-align:center;display:none}
+.start-error.show{display:block}
 
-/* Floating pipeline indicator */
-.pipeline-hud{position:absolute;top:12px;left:12px;z-index:30;display:flex;flex-wrap:wrap;gap:4px;max-width:60%;background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:6px 8px;border-radius:10px;border:1px solid var(--border);transition:opacity .3s}
+/* Pipeline HUD */
+.pipeline-hud{position:absolute;top:10px;left:10px;z-index:30;display:flex;flex-wrap:wrap;gap:4px;max-width:calc(100% - 80px);background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:6px 7px;border-radius:10px;border:1px solid var(--border);transition:opacity .3s}
 .pipeline-hud.hidden{opacity:0;pointer-events:none}
-.pl-chip{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 8px;border-radius:8px;color:var(--text-3);border:1px solid var(--border);background:var(--bg-2);opacity:.5;transition:all .2s}
+.pl-chip{font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 7px;border-radius:8px;color:var(--text-3);border:1px solid var(--border);background:var(--bg-2);opacity:.5;transition:all .2s}
 .pl-chip.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);opacity:1}
 .pl-chip.on.blue{color:var(--blue);border-color:var(--blue);background:var(--blue-soft)}
 .pl-chip.on.purple{color:var(--purple);border-color:var(--purple);background:var(--purple-soft)}
@@ -81,162 +114,199 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg-0);color:var(--text-1)
 .pl-chip.on.pink{color:var(--pink);border-color:var(--pink);background:var(--pink-soft)}
 
 /* Distance indicator */
-.dist-indicator{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:10px;padding:8px 18px;border-radius:12px;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);border:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:12px;transition:opacity .3s}
-.dist-indicator.hidden{opacity:0}
-.dist-bar{width:120px;height:6px;border-radius:3px;background:var(--bg-3);overflow:hidden;position:relative}
+.dist-indicator{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:12px;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);border:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:11px;transition:opacity .3s;max-width:calc(100% - 24px)}
+.dist-indicator.hidden{opacity:0;pointer-events:none}
+.dist-bar{width:90px;height:5px;border-radius:3px;background:var(--bg-3);overflow:hidden;position:relative}
 .dist-fill{height:100%;border-radius:3px;transition:width .3s,background .3s}
-.dist-label{color:var(--text-2);white-space:nowrap}
+.dist-label{color:var(--text-2);white-space:nowrap;font-size:10px}
 .dist-val{color:var(--accent);font-weight:700}
-.dist-hint{font-size:10px;color:var(--text-3);margin-left:4px}
+.dist-hint{font-size:9px;color:var(--text-3);white-space:nowrap}
 
-.sidebar{background:var(--bg-1);border-left:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
-.sb-section{padding:14px 18px;border-bottom:1px solid var(--border)}
+/* Floating camera controls (top-right) */
+.cam-controls{position:absolute;top:10px;right:10px;z-index:35;display:flex;flex-direction:column;gap:8px;transition:opacity .3s}
+.cam-controls.hidden{opacity:0;pointer-events:none}
+.cam-btn{width:42px;height:42px;border-radius:50%;background:rgba(0,0,0,.7);backdrop-filter:blur(8px);border:1px solid var(--border);color:var(--text-1);font-size:17px;cursor:pointer;display:grid;place-items:center;transition:all .2s;padding:0}
+.cam-btn:hover{background:rgba(0,0,0,.9);transform:scale(1.05)}
+.cam-btn:active{transform:scale(.95)}
+.cam-btn.danger{color:var(--red);border-color:rgba(245,91,91,.3)}
+.cam-btn.danger:hover{background:rgba(245,91,91,.15)}
+
+/* =========================================================
+   SIDEBAR / BOTTOM SHEET
+   ========================================================= */
+.sidebar{
+  background:var(--bg-1);
+  border-top:1px solid var(--border);
+  display:flex;flex-direction:column;
+  max-height:55vh;
+  overflow:hidden;
+  transition:max-height .3s ease;
+  padding-bottom:var(--safe-bot);
+}
+.sidebar.collapsed{max-height:54px}
+.sidebar-inner{overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
+
+.sheet-handle{
+  display:flex;justify-content:center;align-items:center;
+  padding:6px 0 4px;cursor:pointer;flex-shrink:0;
+  user-select:none;-webkit-user-select:none;
+}
+.sheet-handle::before{
+  content:'';width:42px;height:4px;border-radius:2px;background:var(--text-3);
+  transition:background .2s;
+}
+.sheet-handle:active::before{background:var(--accent)}
+
+.sb-section{padding:12px 16px;border-bottom:1px solid var(--border)}
 .sb-section:last-child{border-bottom:none}
 .sb-label{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1.6px;color:var(--text-3);margin-bottom:10px;display:flex;align-items:center;gap:6px}
 
-.tabs{display:flex;gap:4px;margin-bottom:0}
-.tab{flex:1;padding:8px 4px;text-align:center;font-size:10px;font-weight:600;border-radius:8px;background:var(--bg-2);border:1px solid transparent;cursor:pointer;color:var(--text-2);transition:all .2s}
+.tabs{display:flex;gap:4px;padding:10px 16px 0}
+.tab{flex:1;padding:9px 4px;text-align:center;font-size:11px;font-weight:600;border-radius:8px;background:var(--bg-2);border:1px solid transparent;cursor:pointer;color:var(--text-2);transition:all .2s;min-height:38px;display:flex;align-items:center;justify-content:center}
 .tab:hover{background:var(--bg-3)}
 .tab.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+
 .tab-panel{display:none}
 .tab-panel.active{display:block}
 
-.upload-zone{border:2px dashed var(--border);border-radius:var(--r);padding:20px 14px;text-align:center;cursor:pointer;transition:all .25s}
+/* Upload zone */
+.upload-zone{position:relative;border:2px dashed var(--border);border-radius:var(--r);padding:18px 12px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg-2)}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--accent);background:var(--accent-soft)}
-.upload-zone input{display:none}
-.upload-icon{font-size:26px;margin-bottom:6px}
-.upload-title{font-size:12px;font-weight:600;margin-bottom:2px}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.upload-icon{font-size:24px;margin-bottom:6px}
+.upload-title{font-size:13px;font-weight:600;margin-bottom:3px}
 .upload-hint{font-size:10px;color:var(--text-3)}
 
-.garment-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
-.garment-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r);background:var(--bg-2);border:2px solid transparent;cursor:pointer;transition:all .2s}
+.garment-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.garment-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:var(--bg-2);border:1px solid transparent;cursor:pointer;transition:all .2s}
 .garment-item:hover{background:var(--bg-3)}
 .garment-item.active{border-color:var(--accent);background:var(--accent-soft)}
-.garment-thumb{width:42px;height:42px;border-radius:6px;background:var(--bg-3);background-size:contain;background-repeat:no-repeat;background-position:center;flex-shrink:0}
+.garment-thumb{width:40px;height:40px;border-radius:6px;background:#fff center/contain no-repeat;background-image:linear-gradient(45deg,#222 25%,transparent 25%,transparent 75%,#222 75%),linear-gradient(45deg,#222 25%,transparent 25%,transparent 75%,#222 75%);background-size:8px 8px;background-position:0 0,4px 4px;flex-shrink:0}
 .garment-meta{flex:1;min-width:0}
-.garment-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.garment-size{font-size:10px;color:var(--text-3)}
-.garment-del{width:26px;height:26px;border-radius:6px;background:var(--bg-3);border:none;color:var(--text-3);font-size:12px;cursor:pointer;display:grid;place-items:center;transition:all .2s}
-.garment-del:hover{background:var(--red-soft);color:var(--red)}
+.garment-name{font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.garment-size{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-3)}
+.garment-del{background:none;border:none;color:var(--text-3);font-size:14px;cursor:pointer;padding:4px 8px;min-width:32px;min-height:32px}
+.garment-del:hover{color:var(--red)}
 
-.anchor-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.anchor-card{padding:8px;border-radius:var(--r);background:var(--bg-2);border:2px solid transparent;cursor:pointer;text-align:center;transition:all .2s}
-.anchor-card:hover{background:var(--bg-3)}
-.anchor-card.active{border-color:var(--accent);background:var(--accent-soft)}
-.anchor-card .ac-icon{font-size:20px;margin-bottom:2px}
-.anchor-card .ac-name{font-size:10px;font-weight:600}
-.anchor-card .ac-desc{font-size:8px;color:var(--text-3);margin-top:1px}
-
-.ctrl-group{margin-bottom:10px}
-.ctrl-head{display:flex;justify-content:space-between;margin-bottom:4px}
+/* Sliders */
+.ctrl-group{margin-bottom:12px}
+.ctrl-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .ctrl-label{font-size:11px;color:var(--text-2)}
-.ctrl-val{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent)}
-input[type=range]{-webkit-appearance:none;width:100%;height:3px;background:var(--bg-3);border-radius:2px;outline:none}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;background:var(--accent);border-radius:50%;cursor:pointer}
+.ctrl-val{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);font-weight:700}
+input[type=range]{width:100%;-webkit-appearance:none;height:5px;background:var(--bg-3);border-radius:3px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 2px 6px rgba(0,229,160,.4)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent);cursor:pointer;border:none;box-shadow:0 2px 6px rgba(0,229,160,.4)}
 
-.toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px}
-.toggle-row .tr-label{flex:1;min-width:0}
-.toggle-row .tr-label-main{font-size:11px;color:var(--text-1);font-weight:500}
-.toggle-row .tr-label-desc{font-size:9px;color:var(--text-3);margin-top:1px;line-height:1.35}
-.toggle{width:36px;height:20px;border-radius:10px;background:var(--bg-3);position:relative;cursor:pointer;border:1px solid var(--border);transition:background .2s;flex-shrink:0}
-.toggle.on{background:var(--accent-dim);border-color:var(--accent)}
-.toggle::after{content:'';width:14px;height:14px;border-radius:50%;background:var(--text-1);position:absolute;top:2px;left:2px;transition:transform .2s}
-.toggle.on::after{transform:translateX(16px)}
+.btn-sec{width:100%;padding:11px;background:var(--bg-2);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;min-height:42px}
+.btn-sec:hover{background:var(--bg-3);border-color:var(--accent)}
+.btn-sec:active{transform:translateY(1px)}
 
-/* Technique cards in Teknik tab */
-.tech-card{background:var(--bg-2);border-radius:10px;padding:11px 12px;margin-bottom:8px;border:1px solid var(--border);transition:border-color .2s}
-.tech-card.active{border-color:var(--accent-dim)}
-.tech-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.tech-title{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600}
-.tech-num{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-3);background:var(--bg-3);padding:2px 6px;border-radius:4px}
-.tech-desc{font-size:9px;color:var(--text-3);line-height:1.45;margin-top:5px;padding-left:2px}
-.tech-method{font-family:'JetBrains Mono',monospace;font-size:8px;color:var(--purple);margin-top:4px;padding:3px 6px;background:var(--purple-soft);border-radius:4px;display:inline-block}
-.tech-card.core{background:linear-gradient(135deg,var(--accent-soft),var(--bg-2));border-color:var(--accent-dim)}
-.tech-card.core .tech-num{background:var(--accent-dim);color:var(--bg-0)}
+/* Tech cards */
+.tech-card{padding:10px 11px;background:var(--bg-2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;transition:all .25s;opacity:.65}
+.tech-card.active{opacity:1;border-color:rgba(0,229,160,.25);background:linear-gradient(180deg,var(--bg-2),var(--bg-3))}
+.tech-card.core{border-color:rgba(0,229,160,.5);background:var(--accent-soft)}
+.tech-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.tech-title{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600}
+.tech-num{font-family:'JetBrains Mono',monospace;font-size:9px;background:var(--bg-3);padding:2px 6px;border-radius:5px;color:var(--accent)}
+.tech-desc{font-size:10px;color:var(--text-2);line-height:1.5;margin-bottom:5px}
+.tech-method{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text-3);background:var(--bg-3);padding:3px 6px;border-radius:5px;display:inline-block}
 
-.size-card{background:var(--bg-2);border-radius:var(--r);overflow:hidden;margin-bottom:10px}
-.size-card-header{padding:10px 14px;display:flex;align-items:center;justify-content:space-between}
-.size-card-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
-.size-badge{padding:3px 10px;border-radius:16px;font-size:11px;font-weight:700;font-family:'JetBrains Mono',monospace}
-.size-badge.match{background:var(--accent-soft);color:var(--accent);border:1px solid rgba(0,229,160,.2)}
-.size-badge.close{background:var(--yellow-soft);color:var(--yellow);border:1px solid rgba(245,220,91,.2)}
+/* Toggles */
+.toggle{width:34px;height:20px;border-radius:10px;background:var(--bg-3);border:1px solid var(--border);position:relative;cursor:pointer;transition:all .2s;flex-shrink:0}
+.toggle::after{content:'';position:absolute;top:1px;left:1px;width:16px;height:16px;border-radius:50%;background:var(--text-3);transition:all .2s}
+.toggle.on{background:var(--accent-soft);border-color:var(--accent)}
+.toggle.on::after{left:15px;background:var(--accent)}
 
-.measure-table{width:100%;border-collapse:collapse;font-size:11px}
-.measure-table th{padding:6px 10px;text-align:left;font-weight:600;color:var(--text-3);font-size:9px;text-transform:uppercase;letter-spacing:.5px;background:var(--bg-3);border-bottom:1px solid var(--border)}
-.measure-table td{padding:7px 10px;border-bottom:1px solid var(--border)}
-.measure-table tr:last-child td{border-bottom:none}
-.measure-table .val-body{color:var(--blue);font-family:'JetBrains Mono',monospace;font-weight:600}
-.measure-table .val-match{color:var(--accent);font-family:'JetBrains Mono',monospace;font-weight:700}
-.measure-table .val-diff{font-size:9px;color:var(--text-3)}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.tr-label{flex:1;min-width:0}
+.tr-label-main{font-size:12px;font-weight:500}
+.tr-label-desc{font-size:10px;color:var(--text-3);margin-top:2px}
 
-.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.metric-box{background:var(--bg-2);border-radius:10px;padding:10px;text-align:center;position:relative;overflow:hidden}
-.metric-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
-.metric-box.blue::before{background:var(--blue)}
-.metric-box.green::before{background:var(--accent)}
-.metric-box.orange::before{background:var(--orange)}
-.metric-box.pink::before{background:var(--pink)}
-.metric-val{font-family:'JetBrains Mono',monospace;font-size:16px;font-weight:700}
-.metric-box.blue .metric-val{color:var(--blue)}
-.metric-box.green .metric-val{color:var(--accent)}
-.metric-box.orange .metric-val{color:var(--orange)}
-.metric-box.pink .metric-val{color:var(--pink)}
-.metric-lbl{font-size:8px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-
-.calib-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-.calib-input{flex:1;padding:8px 10px;background:var(--bg-3);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;transition:border-color .2s}
-.calib-input:focus{border-color:var(--accent)}
-.calib-unit{font-size:11px;color:var(--text-3);flex-shrink:0}
-.calib-hint{font-size:10px;color:var(--text-3);line-height:1.5;margin-bottom:10px}
-
-.size-table-edit{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
-.size-table-edit th{padding:5px 6px;text-align:center;font-weight:600;color:var(--text-3);font-size:9px;text-transform:uppercase;background:var(--bg-3)}
-.size-table-edit td{padding:3px 4px;text-align:center;border-bottom:1px solid var(--border)}
-.size-table-edit input{width:100%;padding:4px;background:var(--bg-3);border:1px solid var(--border);border-radius:4px;color:var(--text-1);font-family:'JetBrains Mono',monospace;font-size:10px;text-align:center;outline:none}
-.size-table-edit input:focus{border-color:var(--accent)}
-.size-table-edit .size-label{font-weight:700;color:var(--accent);font-family:'JetBrains Mono',monospace}
-
-.btn-sec{width:100%;padding:10px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text-1);font-family:'DM Sans',sans-serif;font-weight:600;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .2s}
-.btn-sec:hover{background:var(--accent-soft);border-color:var(--accent-dim);color:var(--accent)}
-.btn-sec+.btn-sec{margin-top:6px}
-
-.info-box{padding:10px 12px;border-radius:var(--r);background:var(--blue-soft);border:1px solid rgba(91,156,245,.12);font-size:10px;line-height:1.55;color:var(--blue)}
-.info-box b{color:var(--text-1)}
-
-.segment{display:flex;background:var(--bg-2);border-radius:8px;padding:3px;gap:2px;margin-bottom:10px}
-.segment-btn{flex:1;padding:6px 4px;text-align:center;font-size:10px;font-weight:600;border-radius:6px;cursor:pointer;color:var(--text-2);transition:all .2s;border:none;background:transparent;font-family:'DM Sans',sans-serif}
-.segment-btn.active{background:var(--accent);color:var(--bg-0)}
-
-.perf-row{display:flex;justify-content:space-between;font-size:10px;padding:5px 0;border-bottom:1px dashed var(--border)}
+/* Performance */
+.perf-row{display:flex;justify-content:space-between;padding:5px 0;font-family:'JetBrains Mono',monospace;font-size:10px;border-bottom:1px solid var(--border)}
 .perf-row:last-child{border-bottom:none}
-.perf-key{color:var(--text-3);font-family:'JetBrains Mono',monospace}
-.perf-val{color:var(--accent);font-family:'JetBrains Mono',monospace;font-weight:600}
+.perf-key{color:var(--text-2)}
+.perf-val{color:var(--accent);font-weight:700}
+
+/* =========================================================
+   DESKTOP — sidebar di kanan
+   ========================================================= */
+@media (min-width:900px){
+  .app{
+    grid-template-rows:52px 1fr;
+    grid-template-columns:1fr 380px;
+  }
+  .header{
+    grid-column:1/-1;
+    height:52px;padding:0 18px;
+  }
+  .logo-mark{width:30px;height:30px;font-size:14px}
+  .logo-label{font-size:13px}
+  .viewport{grid-row:2;grid-column:1}
+  .sidebar{
+    grid-row:2;grid-column:2;
+    border-top:none;border-left:1px solid var(--border);
+    max-height:none;
+    flex-direction:column;
+  }
+  .sidebar.collapsed{max-height:none}
+  .sheet-handle{display:none}
+  .start-hero{font-size:52px;margin-bottom:18px}
+  .start-h{font-size:20px}
+  .start-p{font-size:13px}
+  .pipeline-hud{top:14px;left:14px;padding:6px 8px}
+  .pl-chip{font-size:10px;padding:3px 8px}
+  .dist-indicator{bottom:18px;font-size:12px;padding:8px 18px}
+  .dist-bar{width:120px;height:6px}
+  .dist-label{font-size:11px}
+  .dist-hint{font-size:10px}
+  .cam-controls{top:14px;right:14px;flex-direction:row}
+  .cam-btn{width:40px;height:40px}
+  .sb-section{padding:14px 18px}
+}
+
+/* Force landscape mobile to use a more compact bottom sheet */
+@media (max-height:500px) and (max-width:899px){
+  .sidebar{max-height:65vh}
+  .start-hero{font-size:36px;margin-bottom:8px}
+  .start-h{font-size:16px;margin-bottom:4px}
+  .start-p{font-size:11px;margin-bottom:12px}
+  .start-pipeline{margin-bottom:14px}
+}
 </style>
 </head>
 <body>
 <div class="app">
+
+  <!-- =========================================================
+       HEADER
+       ========================================================= -->
   <header class="header">
     <div class="logo">
       <div class="logo-mark">👗</div>
-      <div class="logo-label">Try<em>On</em>.AR <span style="font-size:9px;color:var(--text-3);margin-left:4px">v4 · Full Pipeline</span></div>
+      <div class="logo-label">Try<em>On</em>.AR <span class="logo-tag">v5</span></div>
     </div>
     <div class="hdr-pills">
-      <div class="pill"><div class="pill-dot" id="dot-cam"></div><span id="lbl-cam">Cam Off</span></div>
+      <div class="pill"><div class="pill-dot" id="dot-cam"></div><span id="lbl-cam">Off</span></div>
       <div class="pill" id="pill-fps">0 FPS</div>
     </div>
   </header>
 
+  <!-- =========================================================
+       VIEWPORT
+       ========================================================= -->
   <div class="viewport">
-    <video id="webcam" playsinline></video>
+    <video id="webcam" playsinline muted autoplay></video>
     <canvas id="canvas"></canvas>
 
+    <!-- Start screen -->
     <div class="start-overlay" id="start-overlay">
       <div class="start-hero">🧍‍♂️</div>
-      <div class="start-h">AR Virtual Try-On — v4 Complete Pipeline</div>
+      <div class="start-h">AR Virtual Try-On v5</div>
       <div class="start-p">
-        Sistem AR try-on dengan pipeline Computer Vision lengkap:
-        Pose Estimation, Segmentasi, Homography, Mesh Warping, Kalibrasi Warna,
-        dan Estimasi Ukuran Tubuh.
+        Upload desain sablon (PNG transparan), berdiri di depan kamera,
+        dan lihat baju virtual menempel pada tubuh secara real-time.
       </div>
       <div class="start-pipeline">
         <span class="start-chip">BlazePose</span>
@@ -244,299 +314,209 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;heigh
         <span class="start-chip">Homography</span>
         <span class="start-chip">Mesh Warp</span>
         <span class="start-chip">HSV Calib</span>
-        <span class="start-chip">Distance Est</span>
-        <span class="start-chip">Measurement</span>
-        <span class="start-chip">Size Match</span>
+        <span class="start-chip">Occlusion</span>
       </div>
       <button class="btn-go" id="btn-go">Aktifkan Kamera</button>
+      <div class="start-error" id="start-error"></div>
     </div>
 
-    <!-- Pipeline HUD: menunjukkan teknik mana yang sedang aktif secara visual -->
+    <!-- Pipeline HUD (chip indikator teknik aktif) -->
     <div class="pipeline-hud hidden" id="pipeline-hud">
       <span class="pl-chip on" id="chip-pose">① Pose</span>
       <span class="pl-chip" id="chip-seg">② Seg</span>
       <span class="pl-chip" id="chip-dist">③ Dist</span>
-      <span class="pl-chip" id="chip-meas">④ Meas</span>
-      <span class="pl-chip" id="chip-homo">⑤ Homo</span>
-      <span class="pl-chip" id="chip-mesh">⑥ Mesh</span>
-      <span class="pl-chip" id="chip-color">⑦ HSV</span>
-      <span class="pl-chip" id="chip-occ">⑧ Occ</span>
+      <span class="pl-chip" id="chip-homo">④ Homo</span>
+      <span class="pl-chip" id="chip-mesh">⑤ Mesh</span>
+      <span class="pl-chip" id="chip-color">⑥ HSV</span>
+      <span class="pl-chip" id="chip-occ">⑦ Occ</span>
     </div>
 
-    <!-- Distance indicator overlay -->
+    <!-- Distance feedback -->
     <div class="dist-indicator hidden" id="dist-indicator">
       <span class="dist-label">📏 Jarak:</span>
       <span class="dist-val" id="dist-val">—</span>
       <div class="dist-bar"><div class="dist-fill" id="dist-fill" style="width:50%;background:var(--accent)"></div></div>
       <span class="dist-hint" id="dist-hint">OK</span>
     </div>
+
+    <!-- Floating camera controls -->
+    <div class="cam-controls hidden" id="cam-controls">
+      <button class="cam-btn" id="btn-switch-cam" title="Ganti Kamera" aria-label="Ganti Kamera">🔄</button>
+      <button class="cam-btn danger" id="btn-stop-cam" title="Matikan Kamera" aria-label="Matikan Kamera">⏻</button>
+    </div>
   </div>
 
-  <div class="sidebar">
-    <div class="sb-section" style="padding-bottom:10px">
+  <!-- =========================================================
+       SIDEBAR / BOTTOM SHEET
+       ========================================================= -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sheet-handle" id="sheet-handle" role="button" aria-label="Toggle panel"></div>
+    <div class="sidebar-inner">
+
       <div class="tabs">
         <div class="tab active" data-tab="try-on">👕 Try-On</div>
-        <div class="tab" data-tab="measure">📏 Ukuran</div>
         <div class="tab" data-tab="tech">🔬 Teknik</div>
       </div>
+
+      <!-- ============ TAB TRY-ON ============ -->
+      <div class="tab-panel active" id="panel-try-on">
+
+        <div class="sb-section">
+          <div class="sb-label">Upload Desain Sablon</div>
+          <div class="upload-zone" id="upload-zone">
+            <input type="file" id="file-input" accept="image/png,image/webp" multiple>
+            <div class="upload-icon">📁</div>
+            <div class="upload-title">Klik atau drag & drop</div>
+            <div class="upload-hint">PNG transparan • Multiple files</div>
+          </div>
+          <div class="garment-list" id="garment-list"></div>
+        </div>
+
+        <div class="sb-section">
+          <div class="sb-label">Penyesuaian Visual</div>
+          <div class="ctrl-group">
+            <div class="ctrl-head"><span class="ctrl-label">Opacity</span><span class="ctrl-val" id="v-opa">85%</span></div>
+            <input type="range" id="sl-opa" min="10" max="100" value="85">
+          </div>
+          <div class="ctrl-group">
+            <div class="ctrl-head"><span class="ctrl-label">Skala</span><span class="ctrl-val" id="v-scl">100%</span></div>
+            <input type="range" id="sl-scl" min="50" max="200" value="100">
+          </div>
+          <div class="ctrl-group">
+            <div class="ctrl-head"><span class="ctrl-label">Offset Y (vertikal)</span><span class="ctrl-val" id="v-ofy">0</span></div>
+            <input type="range" id="sl-ofy" min="-120" max="120" value="0">
+          </div>
+        </div>
+
+        <div class="sb-section">
+          <button class="btn-sec" onclick="takeScreenshot()">📸 Screenshot</button>
+        </div>
+      </div>
+
+      <!-- ============ TAB TEKNIK ============ -->
+      <div class="tab-panel" id="panel-tech">
+        <div class="sb-section">
+          <div class="sb-label">🧬 Pipeline Computer Vision</div>
+
+          <div class="tech-card core active">
+            <div class="tech-card-head">
+              <div class="tech-title"><span class="tech-num">01</span><span>BlazePose</span></div>
+              <div class="toggle on" style="opacity:.5;pointer-events:none"></div>
+            </div>
+            <div class="tech-desc">Deteksi 33 keypoint tubuh. Basis dari seluruh pipeline.</div>
+            <div class="tech-method">MediaPipe BlazePose · modelComplexity=1</div>
+          </div>
+
+          <div class="tech-card active" id="tc-seg">
+            <div class="tech-card-head">
+              <div class="tech-title"><span class="tech-num">02</span><span>Body Segmentation</span></div>
+              <div class="toggle on" id="tgl-seg"></div>
+            </div>
+            <div class="tech-desc">Memisahkan siluet tubuh dari background untuk occlusion handling.</div>
+            <div class="tech-method">MediaPipe Selfie Segmentation</div>
+          </div>
+
+          <div class="tech-card active" id="tc-dist">
+            <div class="tech-card-head">
+              <div class="tech-title"><span class="tech-num">03</span><span>Distance Estimation</span></div>
+              <div class="toggle on" id="tgl-dist"></div>
+            </div>
+            <div class="tech-desc">Estimasi jarak user ke kamera (UX feedback). D = (H<sub>real</sub> × f) / H<sub>pixel</sub></div>
+            <div class="tech-method">Pinhole Camera Model · FOV ≈ 60°</div>
+          </div>
+
+          <div class="tech-card active" id="tc-homo">
+            <div class="tech-card-head">
+              <div class="tech-title"><span class="tech-num">04</span><span>Homography 4-Point</span></div>
+              <div class="toggle on" id="tgl-homo"></div>
+            </div>
+            <div class="tech-desc">Perspective warping 4-titik via Direct Linear Transform (DLT).</div>
+            <div class="tech-method">Gaussian Elimination · 8×8 System</div>
+          </div>
+
+          <div class="tech-card" id="tc-mesh">
+            <div class="tech-card-head">
+              <div class="tech-title"><span class="tech-num">05</span><span>Non-Rigid Mesh Warp</span></div>
+              <div class="toggle" id="tgl-mesh"></div>
+            </div>
+            <div class="tech-desc">Deformasi non-rigid dengan grid mesh + control point Gaussian RBF (TPS-inspired).</div>
+            <div class="tech-method">Radial Basis Function · σ=8</div>
+          </div>
+
+          <div class="tech-card" id="tc-color">
+            <div class="tech-card-head">
+              <div class="tech-title"><span class="tech-num">06</span><span>HSV Color Calibration</span></div>
+              <div class="toggle" id="tgl-color"></div>
+            </div>
+            <div class="tech-desc">Adaptasi brightness desain ke pencahayaan scene (Y = 0.299R+0.587G+0.114B).</div>
+            <div class="tech-method">Rec.601 Luminance Sampling</div>
+          </div>
+
+          <div class="tech-card active" id="tc-occ">
+            <div class="tech-card-head">
+              <div class="tech-title"><span class="tech-num">07</span><span>Occlusion Clipping</span></div>
+              <div class="toggle on" id="tgl-occ"></div>
+            </div>
+            <div class="tech-desc">Overlay desain di-clip ke siluet tubuh untuk mencegah "bocor" ke background.</div>
+            <div class="tech-method">destination-in Composite</div>
+          </div>
+        </div>
+
+        <div class="sb-section">
+          <div class="sb-label">🐛 Debug Visualization</div>
+          <div class="toggle-row">
+            <div class="tr-label">
+              <div class="tr-label-main">Skeleton</div>
+              <div class="tr-label-desc">Tampilkan koneksi keypoint</div>
+            </div>
+            <div class="toggle on" id="tgl-sk"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="tr-label">
+              <div class="tr-label-main">Keypoints</div>
+              <div class="tr-label-desc">Tampilkan titik landmark</div>
+            </div>
+            <div class="toggle" id="tgl-kp"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="tr-label">
+              <div class="tr-label-main">Mesh Grid</div>
+              <div class="tr-label-desc">Visualisasi grid homography/mesh warp</div>
+            </div>
+            <div class="toggle" id="tgl-grid"></div>
+          </div>
+          <div class="toggle-row">
+            <div class="tr-label">
+              <div class="tr-label-main">Segmentation Mask</div>
+              <div class="tr-label-desc">Tampilkan mask tubuh (hijau)</div>
+            </div>
+            <div class="toggle" id="tgl-mask"></div>
+          </div>
+        </div>
+
+        <div class="sb-section">
+          <div class="sb-label">⚡ Performance</div>
+          <div class="perf-row"><span class="perf-key">FPS</span><span class="perf-val" id="perf-fps">—</span></div>
+          <div class="perf-row"><span class="perf-key">Frame time</span><span class="perf-val" id="perf-ft">— ms</span></div>
+          <div class="perf-row"><span class="perf-key">Active techniques</span><span class="perf-val" id="perf-tech">—</span></div>
+          <div class="perf-row"><span class="perf-key">Resolution</span><span class="perf-val" id="perf-res">—</span></div>
+          <div class="perf-row"><span class="perf-key">Camera</span><span class="perf-val" id="perf-cam">—</span></div>
+        </div>
+      </div>
+
     </div>
-
-    <!-- ============ TAB TRY-ON ============ -->
-    <div class="tab-panel active" id="panel-try-on">
-      <div class="sb-section">
-        <div class="sb-label">Upload Desain Sablon</div>
-        <div class="upload-zone" id="upload-zone">
-          <input type="file" id="file-input" accept="image/png,image/webp" multiple>
-          <div class="upload-icon">📁</div>
-          <div class="upload-title">Klik atau drag & drop</div>
-          <div class="upload-hint">PNG transparan • Multiple files</div>
-        </div>
-        <div class="garment-list" id="garment-list"></div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-label">Mode Overlay</div>
-        <div class="anchor-grid" id="anchor-grid"></div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-label">Penyesuaian Visual</div>
-        <div class="ctrl-group">
-          <div class="ctrl-head"><span class="ctrl-label">Opacity</span><span class="ctrl-val" id="v-opa">85%</span></div>
-          <input type="range" id="sl-opa" min="10" max="100" value="85">
-        </div>
-        <div class="ctrl-group">
-          <div class="ctrl-head"><span class="ctrl-label">Skala</span><span class="ctrl-val" id="v-scl">100%</span></div>
-          <input type="range" id="sl-scl" min="50" max="200" value="100">
-        </div>
-        <div class="ctrl-group">
-          <div class="ctrl-head"><span class="ctrl-label">Offset Y (vertikal)</span><span class="ctrl-val" id="v-ofy">0</span></div>
-          <input type="range" id="sl-ofy" min="-120" max="120" value="0">
-        </div>
-      </div>
-
-      <div class="sb-section">
-        <button class="btn-sec" onclick="takeScreenshot()">📸 Screenshot</button>
-      </div>
-    </div>
-
-    <!-- ============ TAB UKURAN ============ -->
-    <div class="tab-panel" id="panel-measure">
-      <div class="sb-section">
-        <div class="sb-label">⚙️ Kalibrasi Referensi</div>
-        <div class="calib-hint">
-          Masukkan <b>tinggi badan</b> Anda (cm) sebagai referensi.
-          Sistem menghitung rasio pixel-ke-cm dari tinggi yang terdeteksi kamera.
-        </div>
-        <div class="calib-row">
-          <span class="ctrl-label" style="white-space:nowrap">Tinggi Badan:</span>
-          <input type="number" class="calib-input" id="calib-height" value="170" min="100" max="220">
-          <span class="calib-unit">cm</span>
-        </div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-label">📐 Estimasi Ukuran Tubuh (Anthropometric)</div>
-        <div class="metric-grid">
-          <div class="metric-box blue"><div class="metric-val" id="m-shoulder">—</div><div class="metric-lbl">Lebar Bahu</div></div>
-          <div class="metric-box green"><div class="metric-val" id="m-chest">—</div><div class="metric-lbl">Lingkar Dada*</div></div>
-          <div class="metric-box orange"><div class="metric-val" id="m-torso">—</div><div class="metric-lbl">Panjang Baju</div></div>
-          <div class="metric-box pink"><div class="metric-val" id="m-sleeve">—</div><div class="metric-lbl">Pjg Lengan</div></div>
-        </div>
-        <div style="font-size:9px;color:var(--text-3);margin-top:6px;line-height:1.4">
-          *Lingkar dada = estimasi dari lebar frontal × rasio empiris.
-          Nilai distabilkan dengan Moving Average Filter (n=10).
-        </div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-label">📊 Tabel Ukuran Konveksi</div>
-        <div class="segment">
-          <button class="segment-btn active" data-chart="short">Lengan Pendek</button>
-          <button class="segment-btn" data-chart="long">Lengan Panjang</button>
-        </div>
-        <div id="size-chart-container"></div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-label">✅ Rekomendasi Ukuran</div>
-        <div id="size-recommendation"></div>
-      </div>
-    </div>
-
-    <!-- ============ TAB TEKNIK (BARU) ============ -->
-    <div class="tab-panel" id="panel-tech">
-      <div class="sb-section">
-        <div class="sb-label">🧬 Pipeline Computer Vision</div>
-
-        <!-- CORE: Pose Estimation -->
-        <div class="tech-card core active">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">01</span>
-              <span>BlazePose Pose Estimation</span>
-            </div>
-            <div class="toggle on" style="opacity:.5;pointer-events:none"></div>
-          </div>
-          <div class="tech-desc">Deteksi 33 keypoint tubuh real-time. Basis dari seluruh pipeline.</div>
-          <div class="tech-method">MediaPipe BlazePose · modelComplexity=1</div>
-        </div>
-
-        <!-- Selfie Segmentation -->
-        <div class="tech-card active" id="tc-seg">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">02</span>
-              <span>Body Segmentation</span>
-            </div>
-            <div class="toggle on" id="tgl-seg"></div>
-          </div>
-          <div class="tech-desc">Memisahkan siluet tubuh dari background untuk occlusion handling (baju tidak menimpa area non-tubuh).</div>
-          <div class="tech-method">MediaPipe Selfie Segmentation · smoothSegmentation=true</div>
-        </div>
-
-        <!-- Distance Estimation -->
-        <div class="tech-card active" id="tc-dist">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">03</span>
-              <span>Distance Estimation</span>
-            </div>
-            <div class="toggle on" id="tgl-dist"></div>
-          </div>
-          <div class="tech-desc">Estimasi jarak user ke kamera berdasar model pinhole camera. D = (H<sub>real</sub> × f) / H<sub>pixel</sub></div>
-          <div class="tech-method">Pinhole Camera Model · FOV ≈ 60°</div>
-        </div>
-
-        <!-- Anthropometric Measurement -->
-        <div class="tech-card active" id="tc-meas">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">04</span>
-              <span>Anthropometric Measurement</span>
-            </div>
-            <div class="toggle on" id="tgl-meas"></div>
-          </div>
-          <div class="tech-desc">Ekstraksi 4 ukuran tubuh dari keypoint dengan Moving Average Filter (n=10) untuk stabilitas.</div>
-          <div class="tech-method">Euclidean Distance · Temporal Smoothing</div>
-        </div>
-
-        <!-- Homography -->
-        <div class="tech-card active" id="tc-homo">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">05</span>
-              <span>Homography 4-Point</span>
-            </div>
-            <div class="toggle on" id="tgl-homo"></div>
-          </div>
-          <div class="tech-desc">Perspective warping 4-titik agar desain mengikuti perspektif tubuh. Solusi DLT melalui Gaussian elimination.</div>
-          <div class="tech-method">Direct Linear Transform (DLT) · 8×8 System</div>
-        </div>
-
-        <!-- Mesh Warping (TPS-inspired) -->
-        <div class="tech-card" id="tc-mesh">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">06</span>
-              <span>Non-Rigid Mesh Warping</span>
-            </div>
-            <div class="toggle" id="tgl-mesh"></div>
-          </div>
-          <div class="tech-desc">Deformasi non-rigid menggunakan grid mesh 8×8. Kontrol point tambahan (siku, pinggul) dengan bobot Gaussian menghasilkan TPS-inspired warp.</div>
-          <div class="tech-method">RBF Gaussian Weighting · Triangle Rendering</div>
-        </div>
-
-        <!-- Color Calibration -->
-        <div class="tech-card" id="tc-color">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">07</span>
-              <span>HSV Color Calibration</span>
-            </div>
-            <div class="toggle" id="tgl-color"></div>
-          </div>
-          <div class="tech-desc">Sampling brightness rata-rata scene, lalu menyesuaikan desain agar cocok dengan kondisi pencahayaan lingkungan.</div>
-          <div class="tech-method">Scene Brightness Sampling · CSS Filter</div>
-        </div>
-
-        <!-- Occlusion Handling -->
-        <div class="tech-card active" id="tc-occ">
-          <div class="tech-card-head">
-            <div class="tech-title">
-              <span class="tech-num">08</span>
-              <span>Occlusion Clipping</span>
-            </div>
-            <div class="toggle on" id="tgl-occ"></div>
-          </div>
-          <div class="tech-desc">Overlay desain di-clip ke area tubuh hasil segmentasi. Mencegah "bocor" ke background.</div>
-          <div class="tech-method">destination-in Composite · Mask-based</div>
-        </div>
-
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-label">🐛 Debug Visualization</div>
-        <div class="toggle-row">
-          <div class="tr-label">
-            <div class="tr-label-main">Skeleton</div>
-            <div class="tr-label-desc">Tampilkan koneksi keypoint</div>
-          </div>
-          <div class="toggle on" id="tgl-sk"></div>
-        </div>
-        <div class="toggle-row">
-          <div class="tr-label">
-            <div class="tr-label-main">Keypoints</div>
-            <div class="tr-label-desc">Tampilkan titik landmark</div>
-          </div>
-          <div class="toggle" id="tgl-kp"></div>
-        </div>
-        <div class="toggle-row">
-          <div class="tr-label">
-            <div class="tr-label-main">Mesh Grid</div>
-            <div class="tr-label-desc">Visualisasi grid homography/mesh warp</div>
-          </div>
-          <div class="toggle" id="tgl-grid"></div>
-        </div>
-        <div class="toggle-row">
-          <div class="tr-label">
-            <div class="tr-label-main">Segmentation Mask</div>
-            <div class="tr-label-desc">Tampilkan mask tubuh (hijau transparan)</div>
-          </div>
-          <div class="toggle" id="tgl-mask"></div>
-        </div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-label">⚡ Performance</div>
-        <div class="perf-row"><span class="perf-key">FPS</span><span class="perf-val" id="perf-fps">—</span></div>
-        <div class="perf-row"><span class="perf-key">Frame time</span><span class="perf-val" id="perf-ft">— ms</span></div>
-        <div class="perf-row"><span class="perf-key">Active techniques</span><span class="perf-val" id="perf-tech">—</span></div>
-        <div class="perf-row"><span class="perf-key">Resolution</span><span class="perf-val" id="perf-res">—</span></div>
-      </div>
-    </div>
-  </div>
+  </aside>
 </div>
 
 <script>
 /* ============================================================================
-   AR VIRTUAL TRY-ON v4 — COMPLETE COMPUTER VISION PIPELINE
+   AR VIRTUAL TRY-ON v5 — RESPONSIVE COMPLETE PIPELINE
    ============================================================================
-   Arsitektur: Single-file web application dengan pipeline bertingkat.
-
-   Render pipeline per-frame:
-     Video ───► BlazePose ───► Landmark (33 keypoints)
-                     │
-                     ├──► Segmentation Mask (built-in)
-                     │
-                     ├──► [Distance Estimation] — pinhole camera
-                     ├──► [Anthropometric Measurement] — + MA filter
-                     │
-     Garment ──► [Homography 4-point] ──► [Mesh Warp (optional)]
-                                 │
-                                 ├──► [Color Calibration]
-                                 │
-                                 └──► [Occlusion Clipping] ──► Composite
+   Perubahan utama dari v4:
+     • Mode overlay 4 preset → di-hardcode (bahu→pinggul)
+     • Fitur ukuran/size → dihilangkan
+     • Layout responsive: bottom sheet (mobile) vs sidebar (desktop)
+     • Tombol matikan kamera & switch kamera depan/belakang
    ============================================================================ */
 
 // =====================================================
@@ -546,67 +526,37 @@ let garments = [], activeGarment = null;
 let showSkel = true, showKP = false, showGrid = false, showMask = false;
 let opacity = 0.85, userScale = 1.0, offsetY = 0;
 let latestLM = null;
-let latestMask = null;          // segmentation mask (Image)
+let latestMask = null;
 let fps = { n:0, t:performance.now(), v:0, ft:0 };
-let bodyMeasurements = {};
-const SMOOTH_N = 10;
-let measureBuffer = [];
 let estimatedDistanceCm = 0;
-let sceneBrightness = 1.0;       // hasil sampling scene (untuk color calib)
+let sceneBrightness = 1.0;
 
-// Technique toggles (sesuai panel Teknik)
-let techSeg   = true;   // (02) segmentation
-let techDist  = true;   // (03) distance estimation
-let techMeas  = true;   // (04) measurement
-let techHomo  = true;   // (05) homography 4-point
-let techMesh  = false;  // (06) non-rigid mesh warp (advanced)
-let techColor = false;  // (07) HSV calibration
-let techOcc   = true;   // (08) occlusion clipping
+// Technique toggles
+let techSeg   = true;
+let techDist  = true;
+let techHomo  = true;
+let techMesh  = false;
+let techColor = false;
+let techOcc   = true;
 
-// =====================================================
-//  ANCHOR MODES (pola titik keypoint untuk jenis pakaian)
-// =====================================================
-const ANCHOR_MODES = [
-  { id:'upper', icon:'👕', name:'Atasan', desc:'Bahu → Pinggul',
-    topLeft:11,topRight:12,bottomLeft:23,bottomRight:24,
-    widthPad:0.30,topPad:0.10, sleeveType:'short' },
-  { id:'longsleeve', icon:'👔', name:'Lengan Panjang', desc:'Bahu → Pinggul',
-    topLeft:11,topRight:12,bottomLeft:23,bottomRight:24,
-    widthPad:0.30,topPad:0.10, sleeveType:'long' },
-  { id:'jacket', icon:'🧥', name:'Jaket', desc:'Bahu lebar → Pinggul',
-    topLeft:11,topRight:12,bottomLeft:23,bottomRight:24,
-    widthPad:0.45,topPad:0.06, sleeveType:'long' },
-  { id:'full', icon:'👗', name:'Full Body', desc:'Bahu → Lutut',
-    topLeft:11,topRight:12,bottomLeft:25,bottomRight:26,
-    widthPad:0.35,topPad:0.08, sleeveType:'short' },
-];
-let activeAnchor = ANCHOR_MODES[0];
+// Camera state
+let pose = null;
+let mediaCamera = null;          // MediaPipe Camera utility instance
+let cameraActive = false;
+let currentFacingMode = 'user';  // 'user' (depan) | 'environment' (belakang)
+
+// Default tinggi badan untuk distance estimation (tidak ditampilkan di UI)
+const DEFAULT_HEIGHT_CM = 170;
 
 // =====================================================
-//  SIZE CHARTS (konveksi Indonesia — dapat diedit user)
+//  ANCHOR — DI-HARDCODE
+//  Mode "atasan" (bahu kiri/kanan → pinggul kiri/kanan)
 // =====================================================
-const SIZE_LABELS = ['S','M','L','XL','XXL'];
-let sizeCharts = {
-  short: {
-    sizes: {
-      S:  { panjangBaju:67, lingkarDada:50, panjangLengan:18, lebarBahu:23 },
-      M:  { panjangBaju:69, lingkarDada:52, panjangLengan:19, lebarBahu:24 },
-      L:  { panjangBaju:71, lingkarDada:54, panjangLengan:20, lebarBahu:24.5 },
-      XL: { panjangBaju:73, lingkarDada:56, panjangLengan:21, lebarBahu:25 },
-      XXL:{ panjangBaju:75, lingkarDada:58, panjangLengan:22, lebarBahu:25.5 },
-    }
-  },
-  long: {
-    sizes: {
-      S:  { panjangBaju:68, lingkarDada:100, panjangLengan:56, lebarBahu:43 },
-      M:  { panjangBaju:70, lingkarDada:105, panjangLengan:57, lebarBahu:44.5 },
-      L:  { panjangBaju:72, lingkarDada:110, panjangLengan:58, lebarBahu:46 },
-      XL: { panjangBaju:74, lingkarDada:117, panjangLengan:59, lebarBahu:47.5 },
-      XXL:{ panjangBaju:76, lingkarDada:122, panjangLengan:60, lebarBahu:49 },
-    }
-  }
+const ANCHOR = {
+  topLeft: 11, topRight: 12,
+  bottomLeft: 23, bottomRight: 24,
+  widthPad: 0.30, topPad: 0.10
 };
-let activeChartType = 'short';
 
 // =====================================================
 //  MATH UTILITIES
@@ -617,37 +567,23 @@ function mid(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2};}
 function ang(a,b){return Math.atan2(b.y-a.y,b.x-a.x);}
 
 // =====================================================
-//  [CORE MATH] — GAUSSIAN ELIMINATION
-//  Untuk memecahkan sistem linear Ax = b
-//  Digunakan oleh computeHomography() (sistem 8x8)
-//  Kompleksitas: O(n³)
+//  GAUSSIAN ELIMINATION (untuk solve sistem 8x8 homography)
 // =====================================================
 function solveLinearSystem(A, b){
   const n = A.length;
-  // Matriks augmented [A | b]
   const M = A.map((row,i)=>[...row, b[i]]);
-
-  // Eliminasi maju dengan partial pivoting
   for (let i=0; i<n; i++){
-    // Cari pivot dengan nilai absolut terbesar
     let maxRow = i;
     for (let k=i+1; k<n; k++){
       if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
     }
     [M[i], M[maxRow]] = [M[maxRow], M[i]];
-
-    if (Math.abs(M[i][i]) < 1e-12) return null; // singular
-
-    // Eliminasi baris di bawah pivot
+    if (Math.abs(M[i][i]) < 1e-12) return null;
     for (let k=i+1; k<n; k++){
       const factor = M[k][i] / M[i][i];
-      for (let j=i; j<=n; j++){
-        M[k][j] -= factor * M[i][j];
-      }
+      for (let j=i; j<=n; j++) M[k][j] -= factor * M[i][j];
     }
   }
-
-  // Back-substitution
   const x = new Array(n);
   for (let i=n-1; i>=0; i--){
     let s = M[i][n];
@@ -658,16 +594,7 @@ function solveLinearSystem(A, b){
 }
 
 // =====================================================
-//  [TECHNIQUE 05] — HOMOGRAPHY 4-POINT (DLT)
-//
-//  Memetakan 4 titik sumber → 4 titik tujuan.
-//  Rumus homography:
-//     [u]   [h11 h12 h13] [x]
-//     [v] = [h21 h22 h23] [y]
-//     [w]   [h31 h32 1  ] [1]
-//  u' = u/w, v' = v/w
-//
-//  Solusi DLT menghasilkan sistem 8x8 (h33=1 sebagai normalisasi)
+//  HOMOGRAPHY 4-POINT (DLT)
 // =====================================================
 function computeHomography(src, dst){
   const A = [], b = [];
@@ -686,7 +613,6 @@ function computeHomography(src, dst){
   ];
 }
 
-// Aplikasikan matriks homography ke titik (x,y)
 function applyH(H, x, y){
   const w = H[2][0]*x + H[2][1]*y + H[2][2];
   return [
@@ -696,68 +622,40 @@ function applyH(H, x, y){
 }
 
 // =====================================================
-//  [RENDERING PRIMITIVE] — TEXTURED TRIANGLE
-//
-//  Canvas 2D tidak mendukung transformasi perspektif 3x3.
-//  Workaround: subdivisi quadrilateral menjadi mesh triangle,
-//  setiap triangle dirender dengan affine transform 2x3.
-//  Kumpulan triangle affine ≈ perspective warping.
+//  TEXTURED TRIANGLE (workaround perspective di Canvas 2D)
 // =====================================================
 function drawTexturedTriangle(ctx, img,
     sx1,sy1, sx2,sy2, sx3,sy3,
     dx1,dy1, dx2,dy2, dx3,dy3){
-
   ctx.save();
-
-  // Clip ke area triangle tujuan
   ctx.beginPath();
   ctx.moveTo(dx1, dy1);
   ctx.lineTo(dx2, dy2);
   ctx.lineTo(dx3, dy3);
   ctx.closePath();
   ctx.clip();
-
-  // Hitung affine transform yang memetakan 3 titik source → 3 titik destinasi
-  // Persamaan: [dx dy] = [a c e] * [sx sy 1]
-  //                      [b d f]
   const det = sx1*(sy2-sy3) - sy1*(sx2-sx3) + (sx2*sy3 - sx3*sy2);
   if (Math.abs(det) < 1e-10){ ctx.restore(); return; }
-
   const a = (dx1*(sy2-sy3) + dx2*(sy3-sy1) + dx3*(sy1-sy2)) / det;
   const c = (dx1*(sx3-sx2) + dx2*(sx1-sx3) + dx3*(sx2-sx1)) / det;
   const e = (dx1*(sx2*sy3-sx3*sy2) + dx2*(sx3*sy1-sx1*sy3) + dx3*(sx1*sy2-sx2*sy1)) / det;
   const b_= (dy1*(sy2-sy3) + dy2*(sy3-sy1) + dy3*(sy1-sy2)) / det;
   const d = (dy1*(sx3-sx2) + dy2*(sx1-sx3) + dy3*(sx2-sx1)) / det;
   const f = (dy1*(sx2*sy3-sx3*sy2) + dy2*(sx3*sy1-sx1*sy3) + dy3*(sx1*sy2-sx2*sy1)) / det;
-
   ctx.setTransform(a, b_, c, d, e, f);
   ctx.drawImage(img, 0, 0);
   ctx.restore();
 }
 
-// =====================================================
-//  [TECHNIQUE 05] — RENDER QUAD DENGAN HOMOGRAPHY
-//
-//  Merender gambar ke quadrilateral tujuan dengan grid subdivision.
-//  Semakin besar gridSize, semakin akurat perspektifnya (namun lebih berat).
-//  gridSize=8 → 64 cell → 128 triangle.
-// =====================================================
 function drawHomographyQuad(ctx, img, quad, gridSize = 8, debugGrid = false){
   const w = img.naturalWidth, h = img.naturalHeight;
-
-  // src = koordinat unit square [0..1]
   const srcQuad = [[0,0],[1,0],[1,1],[0,1]];
   const dstQuad = [
-    [quad.tl.x, quad.tl.y],
-    [quad.tr.x, quad.tr.y],
-    [quad.br.x, quad.br.y],
-    [quad.bl.x, quad.bl.y]
+    [quad.tl.x, quad.tl.y],[quad.tr.x, quad.tr.y],
+    [quad.br.x, quad.br.y],[quad.bl.x, quad.bl.y]
   ];
-
   const H = computeHomography(srcQuad, dstQuad);
   if (!H) return;
-
-  // Generate grid points
   const grid = [];
   for (let i=0; i<=gridSize; i++){
     const row = [];
@@ -768,24 +666,18 @@ function drawHomographyQuad(ctx, img, quad, gridSize = 8, debugGrid = false){
     }
     grid.push(row);
   }
-
-  // Render cells sebagai 2 triangle per cell
   for (let i=0; i<gridSize; i++){
     for (let j=0; j<gridSize; j++){
-      const p00=grid[i][j],   p10=grid[i][j+1];
+      const p00=grid[i][j], p10=grid[i][j+1];
       const p01=grid[i+1][j], p11=grid[i+1][j+1];
-
       drawTexturedTriangle(ctx, img,
         p00.sx,p00.sy, p10.sx,p10.sy, p11.sx,p11.sy,
         p00.dx,p00.dy, p10.dx,p10.dy, p11.dx,p11.dy);
-
       drawTexturedTriangle(ctx, img,
         p00.sx,p00.sy, p11.sx,p11.sy, p01.sx,p01.sy,
         p00.dx,p00.dy, p11.dx,p11.dy, p01.dx,p01.dy);
     }
   }
-
-  // Debug grid overlay
   if (debugGrid){
     ctx.save();
     ctx.setTransform(1,0,0,1,0,0);
@@ -793,18 +685,8 @@ function drawHomographyQuad(ctx, img, quad, gridSize = 8, debugGrid = false){
     ctx.lineWidth = 1;
     for (let i=0; i<=gridSize; i++){
       for (let j=0; j<=gridSize; j++){
-        if (j<gridSize){
-          ctx.beginPath();
-          ctx.moveTo(grid[i][j].dx, grid[i][j].dy);
-          ctx.lineTo(grid[i][j+1].dx, grid[i][j+1].dy);
-          ctx.stroke();
-        }
-        if (i<gridSize){
-          ctx.beginPath();
-          ctx.moveTo(grid[i][j].dx, grid[i][j].dy);
-          ctx.lineTo(grid[i+1][j].dx, grid[i+1][j].dy);
-          ctx.stroke();
-        }
+        if (j<gridSize){ ctx.beginPath(); ctx.moveTo(grid[i][j].dx, grid[i][j].dy); ctx.lineTo(grid[i][j+1].dx, grid[i][j+1].dy); ctx.stroke(); }
+        if (i<gridSize){ ctx.beginPath(); ctx.moveTo(grid[i][j].dx, grid[i][j].dy); ctx.lineTo(grid[i+1][j].dx, grid[i+1][j].dy); ctx.stroke(); }
       }
     }
     ctx.restore();
@@ -812,46 +694,28 @@ function drawHomographyQuad(ctx, img, quad, gridSize = 8, debugGrid = false){
 }
 
 // =====================================================
-//  [TECHNIQUE 06] — NON-RIGID MESH WARPING (TPS-INSPIRED)
-//
-//  Homography = rigid quad-to-quad mapping (tidak melengkung).
-//  Untuk membuat desain mengikuti lekukan tubuh (siku, pinggang),
-//  kita tambahkan control point di dalam quad + displacement
-//  berbobot Gaussian (radial basis function / RBF).
-//
-//  f(p) = H(p) + Σ w_i · exp(-σ·||p - p_i||²) · (target_i - H(p_i))
-//
-//  Ini adalah pendekatan TPS-inspired yang efisien untuk browser.
-//  Untuk TPS penuh diperlukan solusi sistem (N+3)x(N+3).
+//  NON-RIGID MESH WARPING (TPS-inspired)
 // =====================================================
 function drawMeshWarpQuad(ctx, img, quad, extraControls, gridSize = 10, debugGrid = false){
   const w = img.naturalWidth, h = img.naturalHeight;
-
   const srcQuad = [[0,0],[1,0],[1,1],[0,1]];
   const dstQuad = [
-    [quad.tl.x, quad.tl.y],
-    [quad.tr.x, quad.tr.y],
-    [quad.br.x, quad.br.y],
-    [quad.bl.x, quad.bl.y]
+    [quad.tl.x, quad.tl.y],[quad.tr.x, quad.tr.y],
+    [quad.br.x, quad.br.y],[quad.bl.x, quad.bl.y]
   ];
   const H = computeHomography(srcQuad, dstQuad);
   if (!H) return;
-
-  // Precompute rigid position dari control point → displacement
   const SIGMA = 8;
   const cps = extraControls.map(cp => {
     const [rx, ry] = applyH(H, cp.srcU, cp.srcV);
     return { srcU:cp.srcU, srcV:cp.srcV, dx: cp.dstX - rx, dy: cp.dstY - ry };
   });
-
   const grid = [];
   for (let i=0; i<=gridSize; i++){
     const row = [];
     for (let j=0; j<=gridSize; j++){
       const u = j/gridSize, v = i/gridSize;
       let [dx, dy] = applyH(H, u, v);
-
-      // Tambahkan displacement dari setiap control point
       for (const cp of cps){
         const du = u - cp.srcU, dv = v - cp.srcV;
         const r2 = du*du + dv*dv;
@@ -859,17 +723,14 @@ function drawMeshWarpQuad(ctx, img, quad, extraControls, gridSize = 10, debugGri
         dx += cp.dx * wgt;
         dy += cp.dy * wgt;
       }
-
       row.push({dx, dy, sx: u*w, sy: v*h});
     }
     grid.push(row);
   }
-
   for (let i=0; i<gridSize; i++){
     for (let j=0; j<gridSize; j++){
-      const p00=grid[i][j],   p10=grid[i][j+1];
+      const p00=grid[i][j], p10=grid[i][j+1];
       const p01=grid[i+1][j], p11=grid[i+1][j+1];
-
       drawTexturedTriangle(ctx, img,
         p00.sx,p00.sy, p10.sx,p10.sy, p11.sx,p11.sy,
         p00.dx,p00.dy, p10.dx,p10.dy, p11.dx,p11.dy);
@@ -878,7 +739,6 @@ function drawMeshWarpQuad(ctx, img, quad, extraControls, gridSize = 10, debugGri
         p00.dx,p00.dy, p11.dx,p11.dy, p01.dx,p01.dy);
     }
   }
-
   if (debugGrid){
     ctx.save();
     ctx.setTransform(1,0,0,1,0,0);
@@ -890,7 +750,6 @@ function drawMeshWarpQuad(ctx, img, quad, extraControls, gridSize = 10, debugGri
         if (i<gridSize){ ctx.beginPath(); ctx.moveTo(grid[i][j].dx, grid[i][j].dy); ctx.lineTo(grid[i+1][j].dx, grid[i+1][j].dy); ctx.stroke(); }
       }
     }
-    // Highlight control points
     ctx.fillStyle = 'rgba(245,91,156,.9)';
     for (const cp of extraControls){
       ctx.beginPath();
@@ -902,21 +761,13 @@ function drawMeshWarpQuad(ctx, img, quad, extraControls, gridSize = 10, debugGri
 }
 
 // =====================================================
-//  [TECHNIQUE 07] — HSV COLOR CALIBRATION
-//
-//  Prinsip: Sample brightness scene dari beberapa titik video,
-//  lalu sesuaikan brightness/saturation garment agar cocok.
-//
-//  Pengukuran: rata-rata luminance (Y = 0.299R + 0.587G + 0.114B)
-//  normalisasi terhadap nilai mid-gray (128).
+//  HSV COLOR CALIBRATION
 // =====================================================
 function sampleSceneBrightness(videoCanvas, lm, W, H){
   if (!lm) return 1.0;
-  // Sample di beberapa titik tubuh (bahu, pinggang, tengah frame)
   const sL = P(lm,11,W,H), sR = P(lm,12,W,H);
   const hL = P(lm,23,W,H), hR = P(lm,24,W,H);
   const points = [ mid(sL,sR), mid(hL,hR), {x:W/2,y:H/2} ];
-
   let sum = 0, count = 0;
   const tmpCtx = videoCanvas.getContext('2d');
   for (const p of points){
@@ -925,45 +776,31 @@ function sampleSceneBrightness(videoCanvas, lm, W, H){
       const py = Math.max(0, Math.min(H-1, Math.round(p.y)));
       const data = tmpCtx.getImageData(px, py, 1, 1).data;
       const Y = 0.299*data[0] + 0.587*data[1] + 0.114*data[2];
-      sum += Y;
-      count++;
-    } catch(e) { /* getImageData may fail if tainted */ }
+      sum += Y; count++;
+    } catch(e) {}
   }
   if (count === 0) return 1.0;
-  const avgY = sum / count;
-  // Normalisasi: 128 = brightness normal (1.0x)
-  // Rentang aman: 0.7x - 1.3x
-  const factor = Math.max(0.7, Math.min(1.3, avgY / 128));
-  return factor;
+  return Math.max(0.7, Math.min(1.3, (sum/count) / 128));
 }
 
 // =====================================================
-//  [TECHNIQUE 08] — OCCLUSION CLIPPING VIA SEGMENTATION
-//
-//  Garment di-clip menggunakan mask tubuh hasil segmentasi.
-//  Cara: gunakan composite operation 'destination-in' pada
-//  offscreen canvas yang berisi garment, dengan mask sebagai
-//  alpha layer.
-//
-//  Alternatif sederhana yang kita pakai: render garment di
-//  offscreen canvas → apply mask → drawImage ke main canvas.
+//  OCCLUSION CLIPPING
+//  Catatan: hanya mirror jika kamera depan ('user').
 // =====================================================
 function applyMaskToCanvas(targetCtx, maskImg, W, H){
   targetCtx.save();
   targetCtx.globalCompositeOperation = 'destination-in';
-  // Gambar mirror mask (karena video di-mirror)
-  targetCtx.translate(W, 0);
-  targetCtx.scale(-1, 1);
+  if (currentFacingMode === 'user'){
+    targetCtx.translate(W, 0);
+    targetCtx.scale(-1, 1);
+  }
   targetCtx.drawImage(maskImg, 0, 0, W, H);
   targetCtx.restore();
 }
 
 // =====================================================
-//  [TECHNIQUE 03] — PINHOLE CAMERA DISTANCE ESTIMATION
-//
-//  Model: Distance = (realHeight × focalLength) / pixelHeight
-//  focalLength diestimasi dari FOV kamera: f = (W/2) / tan(FOV/2)
-//  FOV webcam ≈ 60° (asumsi umum untuk laptop webcam)
+//  PINHOLE CAMERA DISTANCE ESTIMATION
+//  Pakai DEFAULT_HEIGHT_CM (170cm) sebagai asumsi internal.
 // =====================================================
 function estimateDistance(lm, W, H){
   const nose = P(lm, 0, W, H);
@@ -971,18 +808,15 @@ function estimateDistance(lm, W, H){
   const sL = P(lm, 11, W, H), sR = P(lm, 12, W, H);
   const hL = P(lm, 23, W, H), hR = P(lm, 24, W, H);
 
-  const realHeightCm = parseFloat(document.getElementById('calib-height').value) || 170;
   const focalLengthPx = (W / 2) / Math.tan((60 * Math.PI / 180) / 2);
-
   let pixelHeight;
   if (aL.v > 0.4 && aR.v > 0.4 && nose.v > 0.5){
     pixelHeight = dist(nose, mid(aL,aR));
   } else if (sL.v > 0.5 && hL.v > 0.5){
     pixelHeight = dist(mid(sL,sR), mid(hL,hR)) / 0.30;
   } else return null;
-
   if (pixelHeight < 50) return null;
-  return Math.round((realHeightCm * focalLengthPx) / pixelHeight);
+  return Math.round((DEFAULT_HEIGHT_CM * focalLengthPx) / pixelHeight);
 }
 
 function updateDistanceUI(distCm){
@@ -990,12 +824,10 @@ function updateDistanceUI(distCm){
   estimatedDistanceCm = distCm;
   const distM = (distCm / 100).toFixed(1);
   document.getElementById('dist-val').textContent = distM + ' m';
-
   const fill = document.getElementById('dist-fill');
   const hint = document.getElementById('dist-hint');
   const pct = Math.min(100, Math.max(5, (distCm / 350) * 100));
   fill.style.width = pct + '%';
-
   if (distCm < 80){ fill.style.background='var(--red)'; hint.textContent='Terlalu dekat!'; hint.style.color='var(--red)'; }
   else if (distCm < 120){ fill.style.background='var(--yellow)'; hint.textContent='Mundur sedikit'; hint.style.color='var(--yellow)'; }
   else if (distCm <= 250){ fill.style.background='var(--accent)'; hint.textContent='✓ Ideal'; hint.style.color='var(--accent)'; }
@@ -1003,64 +835,13 @@ function updateDistanceUI(distCm){
 }
 
 // =====================================================
-//  [TECHNIQUE 04] — ANTHROPOMETRIC BODY MEASUREMENT
-//
-//  Dari keypoint BlazePose → 4 ukuran tubuh (cm).
-//  Kalibrasi: pixel-to-cm dari tinggi badan referensi user.
-//  Output distabilkan dengan Moving Average Filter (n=10).
-// =====================================================
-function calculateMeasurements(lm, W, H){
-  const sL = P(lm,11,W,H), sR = P(lm,12,W,H);
-  const hL = P(lm,23,W,H), hR = P(lm,24,W,H);
-  const eL = P(lm,13,W,H), eR = P(lm,14,W,H);
-  const wL = P(lm,15,W,H), wR = P(lm,16,W,H);
-  if (sL.v < 0.5 || sR.v < 0.5) return null;
-
-  const realHeightCm = parseFloat(document.getElementById('calib-height').value) || 170;
-  const nose = P(lm,0,W,H);
-  const aL = P(lm,27,W,H), aR = P(lm,28,W,H);
-
-  let bodyPxHeight;
-  if (aL.v > 0.4 && aR.v > 0.4 && nose.v > 0.5){
-    bodyPxHeight = dist(nose, mid(aL,aR));
-  } else {
-    bodyPxHeight = dist(mid(sL,sR), mid(hL,hR)) / 0.30;
-  }
-  if (bodyPxHeight < 50) return null;
-
-  const pxToCm = realHeightCm / bodyPxHeight;
-
-  const shoulderCm = dist(sL, sR) * pxToCm;
-  const chestCm = shoulderCm * 2.5;                                   // estimasi lingkar
-  const torsoCm = dist(mid(sL,sR), mid(hL,hR)) * pxToCm * 1.05;
-
-  let sleeveLPx = dist(sL, eL), sleeveRPx = dist(sR, eR);
-  if (wL.v > 0.4) sleeveLPx += dist(eL, wL);
-  if (wR.v > 0.4) sleeveRPx += dist(eR, wR);
-  const sleeveCm = ((sleeveLPx + sleeveRPx) / 2) * pxToCm;
-
-  return {
-    shoulder: Math.round(shoulderCm*10)/10,
-    chest: Math.round(chestCm*10)/10,
-    torso: Math.round(torsoCm*10)/10,
-    sleeve: Math.round(sleeveCm*10)/10
-  };
-}
-
-// =====================================================
-//  [MAIN] — GARMENT RENDERING DISPATCHER
-//
-//  Memilih teknik rendering berdasarkan toggle:
-//   - techMesh ON  → non-rigid mesh warp (level tertinggi)
-//   - techHomo ON  → homography 4-point
-//   - semuanya OFF → fallback affine+skew (v3 style)
+//  GARMENT QUAD (4 sudut hasil dari keypoint anchor)
 // =====================================================
 function computeGarmentQuad(lm, W, H){
-  const a = activeAnchor;
-  const tl = P(lm, a.topLeft, W, H);
-  const tr = P(lm, a.topRight, W, H);
-  const bl = P(lm, a.bottomLeft, W, H);
-  const br = P(lm, a.bottomRight, W, H);
+  const tl = P(lm, ANCHOR.topLeft, W, H);
+  const tr = P(lm, ANCHOR.topRight, W, H);
+  const bl = P(lm, ANCHOR.bottomLeft, W, H);
+  const br = P(lm, ANCHOR.bottomRight, W, H);
   if (tl.v < 0.4 || tr.v < 0.4) return null;
 
   const topMid = mid(tl, tr);
@@ -1068,38 +849,20 @@ function computeGarmentQuad(lm, W, H){
   const refW = dist(tl, tr);
   const refH = dist(topMid, botMid);
 
-  // Ekspansi quadrilateral: tambahkan padding lebar & sedikit di atas bahu
-  // Arah perpendicular terhadap shoulder line
   const shoulderAngle = ang(tl, tr);
   const nx = Math.cos(shoulderAngle);
   const ny = Math.sin(shoulderAngle);
-  const px = -ny, py = nx;  // perpendicular (ke atas tubuh)
+  const px = -ny, py = nx;
 
-  const padW = refW * a.widthPad;
-  const padTop = refH * a.topPad;
-
-  // Padding kiri/kanan di sepanjang garis bahu (tambah lebar)
-  // Padding atas di arah perpendicular (menjauhi pinggul)
+  const padW = refW * ANCHOR.widthPad;
+  const padTop = refH * ANCHOR.topPad;
   const scale = userScale;
 
-  const TL = {
-    x: tl.x - nx*padW*scale + px*padTop,
-    y: tl.y - ny*padW*scale + py*padTop + offsetY
-  };
-  const TR = {
-    x: tr.x + nx*padW*scale + px*padTop,
-    y: tr.y + ny*padW*scale + py*padTop + offsetY
-  };
-  const BL = {
-    x: bl.x - nx*padW*scale,
-    y: bl.y - ny*padW*scale + offsetY
-  };
-  const BR = {
-    x: br.x + nx*padW*scale,
-    y: br.y + ny*padW*scale + offsetY
-  };
+  const TL = { x: tl.x - nx*padW*scale + px*padTop, y: tl.y - ny*padW*scale + py*padTop + offsetY };
+  const TR = { x: tr.x + nx*padW*scale + px*padTop, y: tr.y + ny*padW*scale + py*padTop + offsetY };
+  const BL = { x: bl.x - nx*padW*scale, y: bl.y - ny*padW*scale + offsetY };
+  const BR = { x: br.x + nx*padW*scale, y: br.y + ny*padW*scale + offsetY };
 
-  // Skalasi vertikal (user scale)
   const cx = (TL.x + TR.x + BL.x + BR.x) / 4;
   const cy = (TL.y + TR.y + BL.y + BR.y) / 4;
   const apply = p => ({ x: cx + (p.x-cx)*scale, y: cy + (p.y-cy)*scale });
@@ -1115,27 +878,19 @@ function drawGarment(lm, W, H, garmentCtx){
 
   garmentCtx.save();
   garmentCtx.globalAlpha = opacity;
+  garmentCtx.filter = techColor
+    ? `brightness(${sceneBrightness.toFixed(2)}) saturate(1.05)`
+    : 'none';
 
-  // Color calibration via CSS filter
-  if (techColor){
-    garmentCtx.filter = `brightness(${sceneBrightness.toFixed(2)}) saturate(1.05)`;
-  } else {
-    garmentCtx.filter = 'none';
-  }
-
-  // Dispatch ke teknik rendering
   if (techMesh){
-    // Kumpulkan control points tambahan (siku, pinggul)
     const eL = P(lm,13,W,H), eR = P(lm,14,W,H);
     const extra = [];
-    // Siku kiri: posisi ~u=0.0, v=0.35 di gambar asli
     if (eL.v > 0.4) extra.push({ srcU:0.05, srcV:0.35, dstX:eL.x, dstY:eL.y });
     if (eR.v > 0.4) extra.push({ srcU:0.95, srcV:0.35, dstX:eR.x, dstY:eR.y });
     drawMeshWarpQuad(garmentCtx, img, quad, extra, 10, showGrid);
   } else if (techHomo){
     drawHomographyQuad(garmentCtx, img, quad, 8, showGrid);
   } else {
-    // Fallback: affine + skew (v3 style)
     const topMid = mid(quad.tl, quad.tr);
     const botMid = mid(quad.bl, quad.br);
     const drawW = dist(quad.tl, quad.tr);
@@ -1149,47 +904,6 @@ function drawGarment(lm, W, H, garmentCtx){
   }
   garmentCtx.restore();
   return true;
-}
-
-// =====================================================
-//  SIZE RECOMMENDATION — WEIGHTED EUCLIDEAN DISTANCE
-//
-//  Score = 2.5·|ΔBahu| + 1.5·|ΔDada| + 1.0·|ΔPanjang| + 1.0·|ΔLengan|
-//  Bobot bahu paling tinggi karena paling menentukan fit pakaian.
-// =====================================================
-function updateSizeRecommendation(){
-  const m = bodyMeasurements;
-  if (!m.shoulder){
-    document.getElementById('size-recommendation').innerHTML =
-      '<div class="info-box">Berdiri menghadap kamera untuk mendapat rekomendasi ukuran.</div>';
-    return;
-  }
-  const chart = sizeCharts[activeChartType];
-  let results = SIZE_LABELS.map(sz => {
-    const ref = chart.sizes[sz];
-    const dB = Math.abs(m.shoulder - ref.lebarBahu);
-    const dD = Math.abs(m.chest - ref.lingkarDada);
-    const dP = Math.abs(m.torso - ref.panjangBaju);
-    const dL = Math.abs(m.sleeve - ref.panjangLengan);
-    return { size: sz, score: dB*2.5 + dD*1.5 + dP + dL, ref, dB, dD, dP, dL };
-  });
-  results.sort((a,b) => a.score - b.score);
-  const best = results[0], second = results[1];
-
-  const makeTable = (r, badge) => `<div class="size-card">
-    <div class="size-card-header">
-      <div class="size-card-title">${badge==='match'?'🏆 Terbaik':'Alternatif'}</div>
-      <div class="size-badge ${badge}">${r.size}</div>
-    </div>
-    <table class="measure-table"><thead><tr><th>Parameter</th><th>Anda</th><th>Size ${r.size}</th><th>Δ</th></tr></thead><tbody>
-      <tr><td>Lebar Bahu</td><td class="val-body">${m.shoulder}</td><td class="val-match">${r.ref.lebarBahu}</td><td class="val-diff">${r.dB.toFixed(1)}</td></tr>
-      <tr><td>Lingkar Dada</td><td class="val-body">${m.chest}</td><td class="val-match">${r.ref.lingkarDada}</td><td class="val-diff">${r.dD.toFixed(1)}</td></tr>
-      <tr><td>Panjang Baju</td><td class="val-body">${m.torso}</td><td class="val-match">${r.ref.panjangBaju}</td><td class="val-diff">${r.dP.toFixed(1)}</td></tr>
-      <tr><td>Pjg Lengan</td><td class="val-body">${m.sleeve}</td><td class="val-match">${r.ref.panjangLengan}</td><td class="val-diff">${r.dL.toFixed(1)}</td></tr>
-    </tbody></table></div>`;
-
-  document.getElementById('size-recommendation').innerHTML =
-    makeTable(best, 'match') + makeTable(second, 'close');
 }
 
 // =====================================================
@@ -1224,55 +938,152 @@ function drawKeypoints(ctx, lm, W, H){
 }
 
 // =====================================================
-//  MEDIAPIPE INITIALIZATION
-//
-//  BlazePose dengan enableSegmentation=true akan menghasilkan
-//  segmentationMask di setiap frame. Ini menghemat resource
-//  dibanding loading SelfieSegmentation terpisah.
+//  CANVAS REFERENCES
 // =====================================================
 const videoEl = document.getElementById('webcam');
 const canvasEl = document.getElementById('canvas');
 const ctx = canvasEl.getContext('2d');
-
-// Offscreen canvas untuk komposisi garment + mask
 const offCanvas = document.createElement('canvas');
 const offCtx = offCanvas.getContext('2d');
 const videoCanvas = document.createElement('canvas');
 
-function initPose(){
-  const pose = new Pose({
-    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
-  });
+// =====================================================
+//  POSE INITIALIZATION
+//  Hanya buat sekali, reuse untuk switch kamera.
+// =====================================================
+function ensurePose(){
+  if (pose) return pose;
+  pose = new Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
   pose.setOptions({
     modelComplexity: 1,
     smoothLandmarks: true,
-    enableSegmentation: true,       // ⭐ aktifkan segmentasi
+    enableSegmentation: true,
     smoothSegmentation: true,
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5
   });
   pose.onResults(onResults);
+  return pose;
+}
 
-  const cam = new Camera(videoEl, {
-    onFrame: async () => { await pose.send({image: videoEl}); },
-    width: 1280, height: 720
-  });
-  cam.start().then(() => {
+// =====================================================
+//  CAMERA START / STOP / SWITCH
+// =====================================================
+async function startCamera(facingMode){
+  const errorEl = document.getElementById('start-error');
+  errorEl.classList.remove('show');
+
+  // Stop existing stream first
+  await stopCameraStream();
+
+  ensurePose();
+
+  try {
+    // Pakai raw getUserMedia agar bisa pilih facingMode dan memastikan switch berhasil.
+    const constraints = {
+      video: {
+        facingMode: { ideal: facingMode },
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    videoEl.srcObject = stream;
+    await new Promise(res => {
+      if (videoEl.readyState >= 2) return res();
+      videoEl.onloadedmetadata = () => res();
+    });
+    await videoEl.play();
+
+    currentFacingMode = facingMode;
+    cameraActive = true;
+
+    // Mirror class hanya untuk kamera depan
+    videoEl.classList.toggle('mirror', currentFacingMode === 'user');
+
+    // Buat MediaPipe Camera utility yang mengirim frame video ke pose model.
+    // Kita pakai utility ini hanya sebagai "ticker" yang memanggil pose.send tiap frame;
+    // stream sudah kita kontrol sendiri di videoEl.srcObject.
+    mediaCamera = new Camera(videoEl, {
+      onFrame: async () => {
+        if (cameraActive) {
+          try { await pose.send({ image: videoEl }); } catch(e) {}
+        }
+      },
+      width: 1280, height: 720
+    });
+    await mediaCamera.start();
+
+    // UI updates
     document.getElementById('start-overlay').classList.add('gone');
     document.getElementById('dot-cam').classList.add('on');
     document.getElementById('lbl-cam').textContent = 'Live';
     document.getElementById('dist-indicator').classList.remove('hidden');
     document.getElementById('pipeline-hud').classList.remove('hidden');
+    document.getElementById('cam-controls').classList.remove('hidden');
+    document.getElementById('perf-cam').textContent = facingMode === 'user' ? 'Depan' : 'Belakang';
     updatePipelineHUD();
-  });
+  } catch(err){
+    console.error(err);
+    errorEl.textContent = 'Gagal akses kamera: ' + (err.message || err.name);
+    errorEl.classList.add('show');
+    cameraActive = false;
+  }
 }
-document.getElementById('btn-go').addEventListener('click', initPose);
+
+async function stopCameraStream(){
+  cameraActive = false;
+  // Stop MediaPipe camera ticker
+  if (mediaCamera){
+    try { mediaCamera.stop(); } catch(e) {}
+    mediaCamera = null;
+  }
+  // Stop MediaStream tracks
+  if (videoEl.srcObject){
+    const tracks = videoEl.srcObject.getTracks();
+    tracks.forEach(t => t.stop());
+    videoEl.srcObject = null;
+  }
+}
+
+async function stopCameraFull(){
+  await stopCameraStream();
+  // Reset UI ke tampilan awal
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  document.getElementById('start-overlay').classList.remove('gone');
+  document.getElementById('dot-cam').classList.remove('on');
+  document.getElementById('lbl-cam').textContent = 'Off';
+  document.getElementById('dist-indicator').classList.add('hidden');
+  document.getElementById('pipeline-hud').classList.add('hidden');
+  document.getElementById('cam-controls').classList.add('hidden');
+  document.getElementById('perf-cam').textContent = '—';
+  document.getElementById('pill-fps').textContent = '0 FPS';
+  // Reset video class
+  videoEl.classList.remove('mirror');
+  latestLM = null;
+  latestMask = null;
+}
+
+async function switchCamera(){
+  if (!cameraActive) return;
+  const newMode = currentFacingMode === 'user' ? 'environment' : 'user';
+  // Beri feedback visual selama switch
+  const btn = document.getElementById('btn-switch-cam');
+  btn.style.opacity = '0.4';
+  btn.style.pointerEvents = 'none';
+  await startCamera(newMode);
+  btn.style.opacity = '';
+  btn.style.pointerEvents = '';
+}
 
 // =====================================================
-//  MAIN RENDER LOOP
+//  MAIN RENDER LOOP (called from MediaPipe pose.onResults)
 // =====================================================
 function onResults(results){
+  if (!cameraActive) return;
   const tStart = performance.now();
+  const isMirror = currentFacingMode === 'user';
 
   canvasEl.width = results.image.width;
   canvasEl.height = results.image.height;
@@ -1280,24 +1091,21 @@ function onResults(results){
   offCanvas.height = videoCanvas.height = results.image.height;
   const W = canvasEl.width, H = canvasEl.height;
 
-  // 1) Gambar video (mirror) ke main canvas
+  // 1) Gambar video ke main canvas (mirror jika kamera depan)
   ctx.save();
   ctx.clearRect(0, 0, W, H);
-  ctx.translate(W, 0);
-  ctx.scale(-1, 1);
+  if (isMirror){ ctx.translate(W, 0); ctx.scale(-1, 1); }
   ctx.drawImage(results.image, 0, 0, W, H);
   ctx.restore();
 
-  // 1b) Salin juga ke videoCanvas untuk color calibration sampling
+  // 1b) Salin ke videoCanvas untuk color sampling
   const vctx = videoCanvas.getContext('2d');
   vctx.save();
   vctx.clearRect(0, 0, W, H);
-  vctx.translate(W, 0);
-  vctx.scale(-1, 1);
+  if (isMirror){ vctx.translate(W, 0); vctx.scale(-1, 1); }
   vctx.drawImage(results.image, 0, 0, W, H);
   vctx.restore();
 
-  // Simpan segmentation mask jika ada
   latestMask = results.segmentationMask || null;
 
   if (!results.poseLandmarks){
@@ -1306,85 +1114,56 @@ function onResults(results){
     return;
   }
 
-  // Mirror landmark X agar sesuai dengan video yang di-mirror
+  // Mirror landmark X HANYA jika kamera depan (selfie)
   const lm = results.poseLandmarks.map(p => ({
-    x: 1 - p.x, y: p.y, z: p.z, v: p.visibility
+    x: isMirror ? 1 - p.x : p.x,
+    y: p.y, z: p.z, v: p.visibility
   }));
   latestLM = lm;
 
-  // 2) Sampling scene brightness (untuk color calib) — throttled 15 frame
+  // 2) Color brightness sampling (throttled)
   if (techColor && fps.n % 15 === 0){
     sceneBrightness = sampleSceneBrightness(videoCanvas, lm, W, H);
   }
 
-  // 3) Skeleton & keypoint debug overlay
+  // 3) Debug overlay
   if (showSkel) drawSkeleton(ctx, lm, W, H);
   if (showKP) drawKeypoints(ctx, lm, W, H);
 
-  // 4) Segmentation mask debug overlay
+  // 4) Mask debug
   if (showMask && techSeg && latestMask){
     ctx.save();
     ctx.globalAlpha = 0.35;
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.translate(W, 0);
-    ctx.scale(-1, 1);
+    if (isMirror){ ctx.translate(W, 0); ctx.scale(-1, 1); }
     ctx.filter = 'hue-rotate(120deg) saturate(2)';
     ctx.drawImage(latestMask, 0, 0, W, H);
     ctx.restore();
   }
 
-  // 5) RENDER GARMENT dengan pipeline lengkap
+  // 5) Render garment dengan pipeline lengkap
   if (activeGarment){
-    // Render ke offscreen canvas
     offCtx.setTransform(1, 0, 0, 1, 0, 0);
     offCtx.clearRect(0, 0, W, H);
-
     const rendered = drawGarment(lm, W, H, offCtx);
-
     if (rendered){
-      // Terapkan occlusion masking jika aktif
       if (techOcc && techSeg && latestMask){
         applyMaskToCanvas(offCtx, latestMask, W, H);
       }
-      // Composite ke main canvas
       ctx.drawImage(offCanvas, 0, 0);
     }
   }
 
-  // 6) Measurements + distance (throttled)
-  if (techMeas){
-    const raw = calculateMeasurements(lm, W, H);
-    if (raw){
-      measureBuffer.push(raw);
-      if (measureBuffer.length > SMOOTH_N) measureBuffer.shift();
-      const avg = {shoulder:0, chest:0, torso:0, sleeve:0};
-      measureBuffer.forEach(m => { avg.shoulder+=m.shoulder; avg.chest+=m.chest; avg.torso+=m.torso; avg.sleeve+=m.sleeve; });
-      const n = measureBuffer.length;
-      bodyMeasurements = {
-        shoulder: Math.round(avg.shoulder/n * 10) / 10,
-        chest: Math.round(avg.chest/n * 10) / 10,
-        torso: Math.round(avg.torso/n * 10) / 10,
-        sleeve: Math.round(avg.sleeve/n * 10) / 10
-      };
-      document.getElementById('m-shoulder').textContent = bodyMeasurements.shoulder + ' cm';
-      document.getElementById('m-chest').textContent = bodyMeasurements.chest + ' cm';
-      document.getElementById('m-torso').textContent = bodyMeasurements.torso + ' cm';
-      document.getElementById('m-sleeve').textContent = bodyMeasurements.sleeve + ' cm';
-    }
-  }
-
+  // 6) Distance feedback (throttled)
   if (techDist && fps.n % 10 === 0){
     const d = estimateDistance(lm, W, H);
     if (d) updateDistanceUI(d);
   }
 
-  if (fps.n % 20 === 0) updateSizeRecommendation();
-
   updatePerformance(tStart);
 }
 
 // =====================================================
-//  PERFORMANCE MONITORING
+//  PERFORMANCE
 // =====================================================
 function updatePerformance(tStart){
   const frameTime = performance.now() - tStart;
@@ -1416,20 +1195,30 @@ function updatePipelineHUD(){
   setChip('chip-pose', true);
   setChip('chip-seg', techSeg, 'blue');
   setChip('chip-dist', techDist, 'purple');
-  setChip('chip-meas', techMeas, 'blue');
   setChip('chip-homo', techHomo, 'orange');
   setChip('chip-mesh', techMesh, 'pink');
   setChip('chip-color', techColor, 'orange');
   setChip('chip-occ', techOcc && techSeg, 'purple');
 
-  const count = 1 + [techSeg,techDist,techMeas,techHomo,techMesh,techColor,(techOcc&&techSeg)].filter(Boolean).length;
+  const count = 1 + [techSeg,techDist,techHomo,techMesh,techColor,(techOcc&&techSeg)].filter(Boolean).length;
   const perfTech = document.getElementById('perf-tech');
-  if (perfTech) perfTech.textContent = count + ' / 8';
+  if (perfTech) perfTech.textContent = count + ' / 7';
 }
 
 // =====================================================
 //  UI HANDLERS
 // =====================================================
+
+// Aktifkan kamera (default: depan untuk efek selfie)
+document.getElementById('btn-go').addEventListener('click', () => {
+  startCamera('user');
+});
+
+// Matikan kamera
+document.getElementById('btn-stop-cam').addEventListener('click', stopCameraFull);
+
+// Switch kamera depan/belakang
+document.getElementById('btn-switch-cam').addEventListener('click', switchCamera);
 
 // Tabs
 document.querySelectorAll('.tab').forEach(tab => {
@@ -1439,20 +1228,6 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
   });
-});
-
-// Anchor modes
-const anchorGrid = document.getElementById('anchor-grid');
-ANCHOR_MODES.forEach((a, i) => {
-  const c = document.createElement('div');
-  c.className = 'anchor-card' + (i === 0 ? ' active' : '');
-  c.innerHTML = `<div class="ac-icon">${a.icon}</div><div class="ac-name">${a.name}</div><div class="ac-desc">${a.desc}</div>`;
-  c.onclick = () => {
-    activeAnchor = a;
-    anchorGrid.querySelectorAll('.anchor-card').forEach(x => x.classList.remove('active'));
-    c.classList.add('active');
-  };
-  anchorGrid.appendChild(c);
 });
 
 // File upload
@@ -1502,7 +1277,7 @@ function renderGarmentList(){
         <div class="garment-name">${g.name}</div>
         <div class="garment-size">${g.width}×${g.height}px</div>
       </div>
-      <button class="garment-del" data-id="${g.id}">✕</button>`;
+      <button class="garment-del" data-id="${g.id}" aria-label="Hapus">✕</button>`;
     item.addEventListener('click', e => {
       if (e.target.closest('.garment-del')) return;
       activeGarment = g;
@@ -1538,15 +1313,12 @@ function bindTechToggle(id, setter, cardId){
     el.classList.toggle('on');
     const on = el.classList.contains('on');
     setter(on);
-    if (cardId){
-      document.getElementById(cardId).classList.toggle('active', on);
-    }
+    if (cardId) document.getElementById(cardId).classList.toggle('active', on);
     updatePipelineHUD();
   });
 }
 bindTechToggle('tgl-seg',   v => techSeg   = v, 'tc-seg');
 bindTechToggle('tgl-dist',  v => techDist  = v, 'tc-dist');
-bindTechToggle('tgl-meas',  v => techMeas  = v, 'tc-meas');
 bindTechToggle('tgl-homo',  v => techHomo  = v, 'tc-homo');
 bindTechToggle('tgl-mesh',  v => techMesh  = v, 'tc-mesh');
 bindTechToggle('tgl-color', v => techColor = v, 'tc-color');
@@ -1570,51 +1342,60 @@ document.getElementById('tgl-mask').addEventListener('click', e => {
   showMask = e.currentTarget.classList.contains('on');
 });
 
-// Size chart switcher
-document.querySelectorAll('.segment-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeChartType = btn.dataset.chart;
-    renderSizeChart();
-    updateSizeRecommendation();
-  });
+// =====================================================
+//  BOTTOM SHEET TOGGLE (mobile only)
+// =====================================================
+const sidebar = document.getElementById('sidebar');
+const sheetHandle = document.getElementById('sheet-handle');
+sheetHandle.addEventListener('click', () => {
+  sidebar.classList.toggle('collapsed');
 });
 
-function renderSizeChart(){
-  const chart = sizeCharts[activeChartType];
-  const c = document.getElementById('size-chart-container');
-  let h = `<table class="size-table-edit"><thead><tr><th>Size</th><th>Pjg Baju</th><th>Lgkr Dada</th><th>Pjg Lengan</th><th>Lbr Bahu</th></tr></thead><tbody>`;
-  SIZE_LABELS.forEach(sz => {
-    const d = chart.sizes[sz];
-    h += `<tr><td class="size-label">${sz}</td>
-      <td><input type="number" data-sz="${sz}" data-field="panjangBaju" value="${d.panjangBaju}" step="0.5"></td>
-      <td><input type="number" data-sz="${sz}" data-field="lingkarDada" value="${d.lingkarDada}" step="0.5"></td>
-      <td><input type="number" data-sz="${sz}" data-field="panjangLengan" value="${d.panjangLengan}" step="0.5"></td>
-      <td><input type="number" data-sz="${sz}" data-field="lebarBahu" value="${d.lebarBahu}" step="0.5"></td></tr>`;
-  });
-  h += `</tbody></table>`;
-  c.innerHTML = h;
-  c.querySelectorAll('input').forEach(inp => {
-    inp.addEventListener('change', () => {
-      sizeCharts[activeChartType].sizes[inp.dataset.sz][inp.dataset.field] = parseFloat(inp.value);
-      updateSizeRecommendation();
-    });
-  });
-}
-renderSizeChart();
+// Optional: simple swipe gesture pada handle untuk toggle
+let touchStartY = null;
+sheetHandle.addEventListener('touchstart', e => {
+  touchStartY = e.touches[0].clientY;
+}, {passive:true});
+sheetHandle.addEventListener('touchend', e => {
+  if (touchStartY === null) return;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (dy > 30) sidebar.classList.add('collapsed');
+  else if (dy < -30) sidebar.classList.remove('collapsed');
+  touchStartY = null;
+}, {passive:true});
 
-// Screenshot
+// Kalau di mobile dan sidebar terlalu makan space saat awal, default collapsed
+function applyInitialSheetState(){
+  if (window.innerWidth < 900){
+    sidebar.classList.add('collapsed');
+  } else {
+    sidebar.classList.remove('collapsed');
+  }
+}
+applyInitialSheetState();
+window.addEventListener('resize', applyInitialSheetState);
+
+// =====================================================
+//  SCREENSHOT
+// =====================================================
 function takeScreenshot(){
+  if (!cameraActive){
+    alert('Kamera belum aktif.');
+    return;
+  }
   const l = document.createElement('a');
-  l.download = 'tryon-v4-' + Date.now() + '.png';
+  l.download = 'tryon-v5-' + Date.now() + '.png';
   l.href = canvasEl.toDataURL('image/png');
   l.click();
 }
 
-// Initial UI
-updateSizeRecommendation();
+// Initial state
 updatePipelineHUD();
+
+// Lepas resource saat tab ditutup
+window.addEventListener('beforeunload', () => {
+  stopCameraStream();
+});
 </script>
 </body>
 </html>
