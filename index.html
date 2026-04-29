@@ -27,7 +27,6 @@
    • Tab pengukuran tubuh dihilangkan
   =====================================================================
 -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -170,9 +169,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg-0);color:var(--text-1)
 .tab-panel.active{display:block}
 
 /* Upload zone */
-.upload-zone{position:relative;border:2px dashed var(--border);border-radius:var(--r);padding:18px 12px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg-2)}
+.upload-zone{position:relative;display:block;border:2px dashed var(--border);border-radius:var(--r);padding:18px 12px;text-align:center;cursor:pointer;transition:all .2s;background:var(--bg-2)}
 .upload-zone:hover,.upload-zone.drag-over{border-color:var(--accent);background:var(--accent-soft)}
-.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.upload-zone input{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)}
 .upload-icon{font-size:24px;margin-bottom:6px}
 .upload-title{font-size:13px;font-weight:600;margin-bottom:3px}
 .upload-hint{font-size:10px;color:var(--text-3)}
@@ -363,12 +362,12 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
 
         <div class="sb-section">
           <div class="sb-label">Upload Desain Sablon</div>
-          <div class="upload-zone" id="upload-zone">
-            <input type="file" id="file-input" accept="image/png,image/webp" multiple>
+          <label class="upload-zone" id="upload-zone" for="file-input">
+            <input type="file" id="file-input" accept="image/*" multiple>
             <div class="upload-icon">📁</div>
             <div class="upload-title">Klik atau drag & drop</div>
             <div class="upload-hint">PNG transparan • Multiple files</div>
-          </div>
+          </label>
           <div class="garment-list" id="garment-list"></div>
         </div>
 
@@ -541,9 +540,10 @@ let techOcc   = true;
 
 // Camera state
 let pose = null;
-let mediaCamera = null;          // MediaPipe Camera utility instance
 let cameraActive = false;
 let currentFacingMode = 'user';  // 'user' (depan) | 'environment' (belakang)
+let rafId = null;                // requestAnimationFrame handle untuk frame loop
+let isProcessingFrame = false;   // mutex agar pose.send tidak overlap
 
 // Default tinggi badan untuk distance estimation (tidak ditampilkan di UI)
 const DEFAULT_HEIGHT_CM = 170;
@@ -968,31 +968,61 @@ function ensurePose(){
 
 // =====================================================
 //  CAMERA START / STOP / SWITCH
+//  Implementasi manual via getUserMedia + requestAnimationFrame.
+//  Tidak pakai MediaPipe Camera utility karena library tersebut
+//  juga memanggil getUserMedia sendiri → konflik resource saat
+//  switch kamera (root cause dari NotReadableError di Android).
 // =====================================================
 async function startCamera(facingMode){
   const errorEl = document.getElementById('start-error');
   errorEl.classList.remove('show');
 
-  // Stop existing stream first
+  // Stop stream yang ada + tunggu OS melepas resource kamera
   await stopCameraStream();
+  await new Promise(r => setTimeout(r, 250));
 
   ensurePose();
 
+  // Strategi: coba dengan facingMode {ideal}, kalau NotReadableError
+  // (umumnya karena kamera masih dipegang OS), retry sekali lagi
+  // dengan delay lebih panjang.
+  let stream = null;
+  let lastErr = null;
+  for (let attempt = 0; attempt < 2; attempt++){
+    try {
+      const constraints = {
+        video: {
+          facingMode: { ideal: facingMode },
+          width:  { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      break;
+    } catch(err){
+      lastErr = err;
+      if (err.name === 'NotReadableError' || err.name === 'AbortError'){
+        // Kamera masih dipegang track sebelumnya — tunggu lebih lama lalu retry
+        await new Promise(r => setTimeout(r, 600));
+        continue;
+      }
+      // Error lain (NotAllowed, NotFound, dll) tidak akan membaik dengan retry
+      break;
+    }
+  }
+
+  if (!stream){
+    showCameraError(lastErr, facingMode);
+    return;
+  }
+
   try {
-    // Pakai raw getUserMedia agar bisa pilih facingMode dan memastikan switch berhasil.
-    const constraints = {
-      video: {
-        facingMode: { ideal: facingMode },
-        width:  { ideal: 1280 },
-        height: { ideal: 720 }
-      },
-      audio: false
-    };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     videoEl.srcObject = stream;
-    await new Promise(res => {
-      if (videoEl.readyState >= 2) return res();
-      videoEl.onloadedmetadata = () => res();
+    await new Promise((res, rej) => {
+      const t = setTimeout(() => rej(new Error('Video metadata timeout')), 5000);
+      if (videoEl.readyState >= 2){ clearTimeout(t); return res(); }
+      videoEl.onloadedmetadata = () => { clearTimeout(t); res(); };
     });
     await videoEl.play();
 
@@ -1002,18 +1032,8 @@ async function startCamera(facingMode){
     // Mirror class hanya untuk kamera depan
     videoEl.classList.toggle('mirror', currentFacingMode === 'user');
 
-    // Buat MediaPipe Camera utility yang mengirim frame video ke pose model.
-    // Kita pakai utility ini hanya sebagai "ticker" yang memanggil pose.send tiap frame;
-    // stream sudah kita kontrol sendiri di videoEl.srcObject.
-    mediaCamera = new Camera(videoEl, {
-      onFrame: async () => {
-        if (cameraActive) {
-          try { await pose.send({ image: videoEl }); } catch(e) {}
-        }
-      },
-      width: 1280, height: 720
-    });
-    await mediaCamera.start();
+    // Start frame loop (manual, tanpa MediaPipe Camera utility)
+    startFrameLoop();
 
     // UI updates
     document.getElementById('start-overlay').classList.add('gone');
@@ -1025,25 +1045,77 @@ async function startCamera(facingMode){
     document.getElementById('perf-cam').textContent = facingMode === 'user' ? 'Depan' : 'Belakang';
     updatePipelineHUD();
   } catch(err){
-    console.error(err);
-    errorEl.textContent = 'Gagal akses kamera: ' + (err.message || err.name);
-    errorEl.classList.add('show');
-    cameraActive = false;
+    showCameraError(err, facingMode);
+    await stopCameraStream();
+  }
+}
+
+function showCameraError(err, facingMode){
+  const errorEl = document.getElementById('start-error');
+  let msg = 'Gagal akses kamera';
+  if (err){
+    if (err.name === 'NotReadableError'){
+      msg = 'Kamera ' + (facingMode === 'environment' ? 'belakang' : 'depan') +
+            ' sedang dipakai aplikasi/tab lain, atau hardware bermasalah. ' +
+            'Tutup aplikasi kamera lain lalu coba lagi.';
+    } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'){
+      msg = 'Izin kamera ditolak. Aktifkan izin kamera di pengaturan browser.';
+    } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError'){
+      msg = 'Kamera ' + (facingMode === 'environment' ? 'belakang' : 'depan') +
+            ' tidak ditemukan di perangkat ini.';
+    } else if (err.name === 'SecurityError'){
+      msg = 'Akses kamera memerlukan koneksi HTTPS.';
+    } else {
+      msg = 'Error kamera: ' + (err.message || err.name);
+    }
+  }
+  errorEl.textContent = msg;
+  errorEl.classList.add('show');
+  console.error('Camera error:', err);
+}
+
+// Frame loop manual — kirim frame video ke pose model
+function startFrameLoop(){
+  cancelFrameLoop();
+  const tick = async () => {
+    if (!cameraActive) return;
+    if (videoEl.readyState >= 2 && !isProcessingFrame && pose){
+      isProcessingFrame = true;
+      try {
+        await pose.send({ image: videoEl });
+      } catch(e) {
+        console.warn('pose.send failed:', e);
+      } finally {
+        isProcessingFrame = false;
+      }
+    }
+    rafId = requestAnimationFrame(tick);
+  };
+  rafId = requestAnimationFrame(tick);
+}
+
+function cancelFrameLoop(){
+  if (rafId){
+    cancelAnimationFrame(rafId);
+    rafId = null;
   }
 }
 
 async function stopCameraStream(){
   cameraActive = false;
-  // Stop MediaPipe camera ticker
-  if (mediaCamera){
-    try { mediaCamera.stop(); } catch(e) {}
-    mediaCamera = null;
-  }
-  // Stop MediaStream tracks
+  cancelFrameLoop();
+  // Stop semua track MediaStream agar OS melepas hardware kamera
   if (videoEl.srcObject){
     const tracks = videoEl.srcObject.getTracks();
-    tracks.forEach(t => t.stop());
+    tracks.forEach(t => {
+      try { t.stop(); } catch(e) {}
+    });
     videoEl.srcObject = null;
+  }
+  // Tunggu sampai tidak ada frame dalam pemrosesan
+  let safety = 20;
+  while (isProcessingFrame && safety-- > 0){
+    await new Promise(r => setTimeout(r, 25));
   }
 }
 
@@ -1230,10 +1302,9 @@ document.querySelectorAll('.tab').forEach(tab => {
   });
 });
 
-// File upload
+// File upload — label sudah otomatis trigger input, tidak perlu JS click
 const uploadZone = document.getElementById('upload-zone');
 const fileInput = document.getElementById('file-input');
-uploadZone.addEventListener('click', () => fileInput.click());
 uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
 uploadZone.addEventListener('drop', e => {
@@ -1241,7 +1312,11 @@ uploadZone.addEventListener('drop', e => {
   uploadZone.classList.remove('drag-over');
   handleFiles(e.dataTransfer.files);
 });
-fileInput.addEventListener('change', e => handleFiles(e.target.files));
+fileInput.addEventListener('change', e => {
+  handleFiles(e.target.files);
+  // reset agar bisa upload file yang sama lagi
+  e.target.value = '';
+});
 
 function handleFiles(files){
   Array.from(files).forEach(file => {
